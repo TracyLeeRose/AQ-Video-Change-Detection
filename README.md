@@ -5,13 +5,25 @@ A web-based motion detection tool that analyzes MP4 videos to detect changes bet
 Features
 
 Video Upload: Load MP4 videos for analysis.
-Frame Selection: Use a slider to choose the starting frame for motion detection.
-Motion Detection: Compares up to 300 subsequent frames to the selected start frame, accumulating changes.
-Customizable Threshold: Adjust the difference percentage threshold (1-100%) to fine-tune motion sensitivity.
-Visual Output: Displays the reference frame with a translucent red overlay (30% alpha) indicating changed pixels.
-Progress Tracking: Real-time progress bar during frame extraction and motion detection.
+
+Frame Selection:
+Use a slider to choose the starting frame for motion detection.
+
+Motion Detection:
+Compares up to 300 subsequent frames to the selected start frame, accumulating changes.
+
+Customizable Threshold:
+Adjust the difference percentage threshold (1-100%) to fine-tune motion sensitivity.
+
+Visual Output:
+Displays the reference frame with a translucent red overlay (30% alpha) indicating changed pixels.
+
+Progress Tracking:
+Real-time progress bar during frame extraction and motion detection.
 Save Results: Export the result as a PNG image.
-Responsive UI: Thumbnail strip for frame previews and a scalable canvas for output.
+
+Responsive UI:
+Thumbnail strip for frame previews and a scalable canvas for output.
 
 -= Usage =-
 Upload a Video:
@@ -39,13 +51,17 @@ Reset:
 Click "Reset" to clear the application and start over.
 
 How It Works
-Frame Extraction: Extracts up to 300 frames starting from the selected point at an estimated 30 FPS.
+Frame Extraction:
+Extracts up to 300 frames starting from the selected point at an estimated 30 FPS.
 
-Change Detection: Compares each frame to the reference frame, marking pixels with differences above the threshold.
+Change Detection:
+Compares each frame to the reference frame, marking pixels with differences above the threshold.
 
-Overlay Rendering: Uses a temporary canvas to apply a 30% alpha red overlay, ensuring proper transparency.
+Overlay Rendering:
+Uses a temporary canvas to apply a 30% alpha red overlay, ensuring proper transparency.
 
-Performance: Asynchronous processing with progress updates to handle large videos efficiently.
+Performance:
+Asynchronous processing with progress updates to handle large videos efficiently.
 
 Technical Details
 Languages: HTML5, CSS3, JavaScript (ES6+)
