@@ -4,7 +4,7 @@ Samples 300 frames from video and shows overlay of changed detected
 A web-based motion detection tool that analyzes MP4 videos to detect changes between frames, highlighting differences with a translucent red overlay. Built with HTML, CSS, and JavaScript, this application processes up to 300 frames from a user-selected starting point and visualizes motion in an intuitive interface.
 Features
 
-Video Upload: Load MP4 videos for analysis.
+#Video Upload: Load MP4 videos for analysis.
 
 Frame Selection: Use a slider to choose the starting frame for motion detection.
 
@@ -12,7 +12,7 @@ Motion Detection: Compares up to 300 subsequent frames to the selected start fra
 
 Customizable Threshold: Adjust the difference percentage threshold (1-100%) to fine-tune motion sensitivity.
 
-Visual Output: Displays the reference frame with a translucent red overlay (30% alpha) indicating changed pixels.
+#Visual Output: Displays the reference frame with a translucent red overlay (30% alpha) indicating changed pixels.
 
 Progress Tracking: Real-time progress bar during frame extraction and motion detection.
 
