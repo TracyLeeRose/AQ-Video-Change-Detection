@@ -1,5 +1,5 @@
 # AQ-Video-Change-Detection
-Samples 300 frames from video and shows overlay of changed detected
+Samples 300 frames from video and shows overlay of change detected
 
 A web-based motion detection tool that analyzes MP4 videos to detect changes between frames, highlighting differences with a translucent red overlay. Built with HTML, CSS, and JavaScript, this application processes up to 300 frames from a user-selected starting point and visualizes motion in an intuitive interface.
 Features
