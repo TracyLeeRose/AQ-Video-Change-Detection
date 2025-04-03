@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Aquiplicity 2025 - Motion Detector (Translucent Overlay Fix)</title> <!-- Updated Title -->
+    <style>
+        /* --- CSS Styles (Unchanged) --- */
+        body { margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; font-family: Arial, sans-serif; }
+        #marqueeContainer { position: fixed; top: 0; left: 0; width: 100%; background: #f0f0f0; border-bottom: 1px solid #ccc; overflow: hidden; height: 20px; z-index: 1000; }
+        #marquee { font-family: Arial, sans-serif; font-size: 12px; white-space: nowrap; animation: scroll 45s linear infinite; }
+        @keyframes scroll { from { transform: translateX(100%); } to { transform: translateX(-100%); } }
+        #controls { display: flex; align-items: center; padding: 10px; flex-wrap: wrap; margin-top: 20px; border-bottom: 1px solid #eee; }
+        #mainContainer { display: flex; flex: 1; overflow: hidden; }
+        #thumbnailStrip { display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; padding: 5px; border-right: 1px solid #ccc; background: #f0f0f0; width: 165px; flex-shrink: 0; }
+        .thumbnail { width: 150px; height: 112px; object-fit: cover; margin-bottom: 5px; border: 1px solid #999; cursor: pointer; background-color: #ddd; }
+        .thumbnail:hover { border-color: #000; box-shadow: 0 0 5px rgba(0,0,0,0.3); }
+        #workingArea { flex: 1; display: flex; flex-direction: column; align-items: center; overflow: auto; background-color: #e8e8e8; padding: 10px; }
+        canvas { border: 1px solid black; margin: 10px auto; display: block; background-color: white; max-width: calc(100% - 20px); max-height: calc(100% - 80px); box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        #canvasOutput:not([width]), #canvasOutput:not([height]){ min-height: 300px; min-width: 400px; background-color: #ccc; border-style: dashed; }
+        #status { margin: 10px 5px 5px 5px; font-family: Arial, sans-serif; font-size: 0.9em; color: #333; text-align: center; min-height: 1.2em; flex-shrink: 0; }
+        button, input[type="file"]::file-selector-button { margin: 5px; padding: 6px 12px; font-size: 0.9em; border-radius: 4px; border: 1px solid #ccc; background-color: #f8f8f8; cursor: pointer; transition: background-color 0.2s, border-color 0.2s; }
+        button:hover, input[type="file"]::file-selector-button:hover { background-color: #eee; border-color: #aaa; }
+        button:disabled { cursor: not-allowed; opacity: 0.6; }
+        .slider-container { margin: 0 10px; display: flex; align-items: center; }
+        .slider-label { margin-right: 5px; font-family: Arial, sans-serif; font-size: 0.85em; }
+        input[type="range"] { width: 120px; height: 5px; cursor: pointer; }
+        .slider-value { margin-left: 5px; min-width: 35px; font-family: 'Courier New', Courier, monospace; font-size: 0.85em; background-color: #eee; padding: 2px 4px; border-radius: 3px; text-align: center; }
+        .slider-timestamp { margin-left: 5px; font-size: 0.8em; color: #444; font-family: 'Courier New', Courier, monospace; min-width: 55px; display: inline-block; text-align: right; }
+        .action-button { background-color: #4CAF50; color: white; border: none; box-shadow: 0 2px #3a8a40; }
+        .action-button:hover { background-color: #45a049; border: none; }
+        .action-button:active { box-shadow: 0 1px #3a8a40; transform: translateY(1px); }
+        .reset-button { background-color: #cc0000; color: white; padding: 4px 8px; border: none; border-radius: 3px; box-shadow: 0 2px #990000, 0 3px 5px rgba(0,0,0,0.2); cursor: pointer; font-family: Arial, sans-serif; font-size: 12px; transition: all 0.1s; margin: 0 5px; }
+        .reset-button:hover { background-color: #e60000; }
+        .reset-button:active { box-shadow: 0 1px #990000; transform: translateY(1px); }
+        #progressContainer { width: 80%; max-width: 400px; height: 10px; background-color: #ccc; border-radius: 5px; margin: 5px auto; overflow: hidden; display: none; }
+        #progressBar { width: 0%; height: 100%; background-color: #4CAF50; border-radius: 5px; transition: width 0.1s linear; }
+        .control-group { border: 1px solid #ddd; padding: 5px; margin: 5px; border-radius: 4px; background-color: #f9f9f9; display: flex; align-items: center; flex-wrap: wrap; }
+        .control-group > span { font-weight: bold; font-size: 0.9em; margin-right: 10px; }
+        #totalFramesInfo { font-size: 0.8em; color: #555; margin-left: 5px; margin-right: 10px; }
+        #thresholdControl { margin-left: 15px; }
+    </style>
+</head>
+<body>
+    <div id="marqueeContainer">
+        <div id="marquee">Load MP4 Video. Select start frame. Click Detect Motion. Compares up to 300 subsequent frames to the start frame. Changes shown as red overlay on start frame.</div>
+    </div>
+    <div id="controls">
+        <input type="file" id="imageInput" accept="video/mp4">
+        <button id="detectButton" onclick="detectMotion()" class="action-button" disabled>Detect Motion</button>
+        <button class="reset-button" onclick="resetApplication()">Reset</button>
+
+        <div class="control-group" id="frameSelectContainer" style="display: none;">
+            <span>Start Frame:</span><span id="totalFramesInfo">(Total: N/A)</span>
+            <div class="slider-container">
+                <span class="slider-label">Start:</span>
+                <input type="range" id="frameSelectSlider" min="0" max="100" step="1" value="0" disabled>
+                <span class="slider-value" id="frameSelectSlider-value">0%</span>
+                <span class="slider-timestamp" id="frameSelectSlider-timestamp">(--:--)</span>
+            </div>
+        </div>
+
+         <div class="control-group" id="thresholdControl">
+            <span class="slider-label">Difference % Threshold:</span>
+            <input type="range" id="thresholdSlider" min="1" max="100" step="1" value="15">
+            <span class="slider-value" id="thresholdSlider-value">15</span>%
+        </div>
+    </div>
+    <div id="mainContainer">
+        <div id="thumbnailStrip"></div>
+        <div id="workingArea">
+            <canvas id="canvasOutput"></canvas>
+            <div id="progressContainer"><div id="progressBar"></div></div>
+            <div id="status">Upload an MP4 video to begin</div>
+            <div><button onclick="saveImage()">Save Result Image</button></div>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+        // --- Constants (Unchanged) ---
+        const NUM_FRAMES_TO_PROCESS = 300;
+        const FRAME_RATE_ESTIMATE = 30;
+        const CHANGE_COLOR = [255, 0, 0, 255];
+        const SEEK_TIMEOUT = 8000;
+        const OVERLAY_ALPHA = 0.3;
+        const INITIAL_DISPLAY_FRAME = 25;
+
+        // --- ImageStack Class (Unchanged) ---
+        class ImageStack { /* ... (unchanged) ... */ constructor() { this.images = []; this.width = 0; this.height = 0; } addImageData(imageData) { if (this.images.length === 0) { this.width = imageData.width; this.height = imageData.height; } else if (imageData.width !== this.width || imageData.height !== this.height) { console.warn("Inconsistent ImageData dimensions added! Resizing to fit."); const tempCanvas = document.createElement('canvas'); const tempCtx = tempCanvas.getContext('2d'); tempCanvas.width = this.width; tempCanvas.height = this.height; const tempImg = document.createElement('canvas'); tempImg.width = imageData.width; tempImg.height = imageData.height; tempImg.getContext('2d').putImageData(imageData, 0, 0); tempCtx.drawImage(tempImg, 0, 0, this.width, this.height); imageData = tempCtx.getImageData(0, 0, this.width, this.height); } this.images.push(imageData); } async detectPixelChanges(differencePercentage) { if (this.images.length < 2) { throw new Error("Need at least two frames (reference + 1) to detect changes."); } const referenceImageData = this.images[0]; const referenceData = referenceImageData.data; const width = this.width; const height = this.height; const numPixels = width * height; console.log(`Starting accumulated change detection against reference frame (Frame 0) using ${this.images.length} frames. Difference Threshold: ${differencePercentage}%`); status.textContent = `Detecting changes across ${this.images.length} frames (accumulating)...`; await new Promise(resolve => setTimeout(resolve, 0)); const changeMapImageData = new ImageData(width, height); const changeMapData = changeMapImageData.data; const thresholdValue = (differencePercentage / 100.0) * 255.0; console.log(`Calculated comparison threshold: ${thresholdValue.toFixed(2)} (out of 255)`); for (let frameIdx = 1; frameIdx < this.images.length; frameIdx++) { const currentImageData = this.images[frameIdx]; const currentData = currentImageData.data; status.textContent = `Comparing Frame ${frameIdx + 1} / ${this.images.length} to Reference...`; progressBar.style.width = `${((frameIdx) / (this.images.length - 1)) * 100}%`; await new Promise(resolve => setTimeout(resolve, 0)); for (let p = 0; p < numPixels; p++) { const idx = p * 4; if (changeMapData[idx + 3] === 0) { const r1 = referenceData[idx], g1 = referenceData[idx + 1], b1 = referenceData[idx + 2]; const r2 = currentData[idx], g2 = currentData[idx + 1], b2 = currentData[idx + 2]; const diff = (Math.abs(r1 - r2) + Math.abs(g1 - g2) + Math.abs(b1 - b2)) / 3.0; if (diff > thresholdValue) { changeMapData[idx] = CHANGE_COLOR[0]; changeMapData[idx + 1] = CHANGE_COLOR[1]; changeMapData[idx + 2] = CHANGE_COLOR[2]; changeMapData[idx + 3] = CHANGE_COLOR[3]; } } } } console.log("Accumulated change detection completed."); progressBar.style.width = '100%'; await new Promise(resolve => setTimeout(resolve, 10)); return { baseImageData: referenceImageData, changeMapImageData: changeMapImageData }; } }
+
+        // --- Global Variables (Unchanged) ---
+        let canvas = document.getElementById('canvasOutput'); let ctx = canvas.getContext('2d');
+        let imageStack = new ImageStack(); let status = document.getElementById('status');
+        let detectButton = document.getElementById('detectButton'); let thumbnailStrip = document.getElementById('thumbnailStrip');
+        let progressContainer = document.getElementById('progressContainer'); let progressBar = document.getElementById('progressBar');
+        let thresholdSlider = document.getElementById('thresholdSlider'); let thresholdValueDisplay = document.getElementById('thresholdSlider-value');
+        let finalBaseImage = null; let finalChangeMap = null;
+        let frameSelectSliderContainer = null; let frameSelectSlider = null;
+        let frameSelectValueDisplay = null; let frameSelectTimestampDisplay = null;
+        let totalFramesInfoSpan = null; let videoDuration = 0; let totalVideoFramesEstimate = 0;
+        let currentVideoFile = null; let lastExtractionSliderValue = -1; let activeVideoElement = null;
+
+        // --- Helper Function to Format Time (Unchanged) ---
+        function formatTime(totalSeconds) { /* ... (unchanged) ... */ if (isNaN(totalSeconds) || totalSeconds < 0 || !isFinite(totalSeconds)) { return "--:--"; } totalSeconds = Math.max(0, totalSeconds); const hours = Math.floor(totalSeconds / 3600); const minutes = Math.floor((totalSeconds % 3600) / 60); const seconds = Math.floor(totalSeconds % 60); let timeString = ""; if (hours > 0) { timeString += `${String(hours).padStart(2, '0')}:`; timeString += `${String(minutes).padStart(2, '0')}:`; timeString += `${String(seconds).padStart(2, '0')}`; } else { timeString += `${String(minutes).padStart(2, '0')}:`; timeString += `${String(seconds).padStart(2, '0')}`; } return timeString; }
+
+        // --- Initialization (Unchanged) ---
+        document.addEventListener('DOMContentLoaded', () => { /* ... (unchanged) ... */ if (!canvas || !ctx) { console.error('Canvas context failed'); status.textContent = 'Error: Canvas init failed'; return; } document.getElementById('imageInput').addEventListener('change', handleVideoUpload); frameSelectSliderContainer = document.getElementById('frameSelectContainer'); frameSelectSlider = document.getElementById('frameSelectSlider'); frameSelectValueDisplay = document.getElementById('frameSelectSlider-value'); frameSelectTimestampDisplay = document.getElementById('frameSelectSlider-timestamp'); totalFramesInfoSpan = document.getElementById('totalFramesInfo'); frameSelectSlider.addEventListener('input', () => { const sliderValue = parseInt(frameSelectSlider.value, 10); frameSelectValueDisplay.textContent = `${sliderValue}%`; let currentTime = 0; if (videoDuration && videoDuration > 0 && isFinite(videoDuration)) { currentTime = videoDuration * (sliderValue / 100.0); } if (frameSelectTimestampDisplay) { frameSelectTimestampDisplay.textContent = `(${formatTime(currentTime)})`; } }); thresholdSlider.addEventListener('input', () => { thresholdValueDisplay.textContent = thresholdSlider.value; }); console.log('Page loaded'); resetApplication(); });
+
+        // --- Promise-based Video Seek Function (Unchanged) ---
+        const seekPromise = (video, time) => { /* ... (unchanged) ... */ return new Promise((resolveSeek, rejectSeek) => { const seekTime = Math.max(0, Math.min(time, video.duration)); if (Math.abs(video.currentTime - seekTime) < 0.05) { requestAnimationFrame(resolveSeek); return; } const timeout = setTimeout(() => { console.error(`Seek to ${seekTime.toFixed(2)} timed out after ${SEEK_TIMEOUT}ms`); video.removeEventListener('seeked', onSeeked); video.removeEventListener('error', onError); rejectSeek(new Error(`Seek to ${seekTime.toFixed(2)} timed out`)); }, SEEK_TIMEOUT); const onSeeked = () => { clearTimeout(timeout); video.removeEventListener('seeked', onSeeked); video.removeEventListener('error', onError); requestAnimationFrame(resolveSeek); }; const onError = (err) => { clearTimeout(timeout); console.error(`Video error during seek to ${seekTime.toFixed(2)}:`, err); video.removeEventListener('seeked', onSeeked); video.removeEventListener('error', onError); rejectSeek(err || new Error(`Unknown error during seek to ${seekTime.toFixed(2)}`)); }; video.addEventListener('seeked', onSeeked, { once: true }); video.addEventListener('error', onError, { once: true }); if (video.readyState < video.HAVE_METADATA) { clearTimeout(timeout); console.error("Seek cancelled: Video metadata not ready."); video.removeEventListener('seeked', onSeeked); video.removeEventListener('error', onError); return rejectSeek(new Error("Video metadata not ready for seek.")); } video.currentTime = seekTime; }); };
+
+        // --- Fit Image/Video to Screen (Unchanged) ---
+        function fitToScreen(imgWidth, imgHeight) { /* ... (unchanged) ... */ const workingArea = document.getElementById('workingArea'); const maxWidth = workingArea.clientWidth - 40; const maxHeight = workingArea.clientHeight - 100; const safeMaxWidth = Math.max(100, maxWidth); const safeMaxHeight = Math.max(100, maxHeight); const aspectRatio = imgWidth / imgHeight; let newWidth = imgWidth; let newHeight = imgHeight; if (newWidth > safeMaxWidth) { newWidth = safeMaxWidth; newHeight = newWidth / aspectRatio; } if (newHeight > safeMaxHeight) { newHeight = safeMaxHeight; newWidth = newHeight * aspectRatio; } return { width: Math.max(1, Math.floor(newWidth)), height: Math.max(1, Math.floor(newHeight)) }; }
+
+        // --- Video Upload Handler (Unchanged) ---
+        async function handleVideoUpload(e) { /* ... (unchanged) ... */ const files = e.target.files; if (!files || files.length === 0) { status.textContent = 'No video file selected'; return; } const file = files[0]; if (!file.type.startsWith('video/mp4')) { status.textContent = 'Please select an MP4 video file.'; e.target.value = ''; return; } console.log("handleVideoUpload: Starting processing for", file.name); resetApplication(); detectButton.disabled = true; currentVideoFile = file; status.textContent = `Loading video: ${file.name}...`; try { await processVideoFile(file); console.log(`handleVideoUpload: processVideoFile completed for ${file.name}.`); } catch (error) { console.error('Error processing video:', error); status.textContent = `Error processing video: ${error.message}`; resetApplication(); } finally { try { e.target.value = ''; } catch(err) { console.warn("Could not clear file input."); } } }
+
+        // --- Thumbnail Creation (Unchanged) ---
+        async function createThumbnail(imageData, title) { /* ... (unchanged) ... */ return new Promise((resolve) => { const thumbCanvas = document.createElement('canvas'); thumbCanvas.width = 150; thumbCanvas.height = 112; const thumbCtx = thumbCanvas.getContext('2d'); const tempCanvas = document.createElement('canvas'); tempCanvas.width = imageData.width; tempCanvas.height = imageData.height; tempCanvas.getContext('2d').putImageData(imageData, 0, 0); const aspect = imageData.width / imageData.height; let drawWidth = 150, drawHeight = 112; if (aspect > 150/112) { drawHeight = 150 / aspect; } else { drawWidth = 112 * aspect; } const drawX = (150 - drawWidth) / 2; const drawY = (112 - drawHeight) / 2; thumbCtx.fillStyle = '#ddd'; thumbCtx.fillRect(0, 0, 150, 112); thumbCtx.drawImage(tempCanvas, drawX, drawY, drawWidth, drawHeight); const thumbImg = new Image(); thumbImg.src = thumbCanvas.toDataURL('image/png'); thumbImg.className = 'thumbnail'; thumbImg.title = title; resolve(thumbImg); }); }
+
+        // --- Process Video Metadata (Unchanged - Displays frame 25) ---
+        async function processVideoFile(file) { /* ... (unchanged from previous version) ... */ console.log("processVideoFile: Entered"); const video = document.createElement('video'); activeVideoElement = video; const objectURL = URL.createObjectURL(file); video.muted = true; video.preload = 'metadata'; imageStack = new ImageStack(); thumbnailStrip.innerHTML = ''; return new Promise(async (resolve, reject) => { video.onerror = (e) => { console.error("processVideoFile: video.onerror triggered"); URL.revokeObjectURL(objectURL); progressContainer.style.display = 'none'; activeVideoElement = null; reject(new Error(`Failed to load video metadata: ${e.message || 'Unknown error'}`)); }; video.onloadedmetadata = async () => { console.log("processVideoFile: video.onloadedmetadata triggered"); videoDuration = video.duration; totalVideoFramesEstimate = Math.floor(videoDuration * FRAME_RATE_ESTIMATE); console.log(`Video metadata: ${video.videoWidth}x${video.videoHeight}, Duration: ${videoDuration.toFixed(2)}s (Est. ${totalVideoFramesEstimate} frames)`); if (!videoDuration || videoDuration === Infinity || !video.videoWidth || !video.videoHeight) { if(totalFramesInfoSpan) totalFramesInfoSpan.textContent = `(Total: Invalid Meta)`; URL.revokeObjectURL(objectURL); activeVideoElement = null; return reject(new Error('Video metadata invalid.')); } if (totalFramesInfoSpan) { totalFramesInfoSpan.textContent = `(Total: ~${totalVideoFramesEstimate} frames / ${formatTime(videoDuration)})`; } frameSelectSliderContainer.style.display = 'flex'; frameSelectSlider.disabled = false; const scaled = fitToScreen(video.videoWidth, video.videoHeight); canvas.width = scaled.width; canvas.height = scaled.height; ctx.clearRect(0, 0, canvas.width, canvas.height); status.textContent = `Video loaded. Seeking to initial frame...`; let initialDisplayTime = (INITIAL_DISPLAY_FRAME -1) / FRAME_RATE_ESTIMATE; initialDisplayTime = Math.max(0, Math.min(initialDisplayTime, videoDuration - 0.1)); const currentSliderValue = parseInt(frameSelectSlider.value, 10); const sliderTime = videoDuration * (currentSliderValue / 100.0); if(frameSelectValueDisplay) frameSelectValueDisplay.textContent = `${currentSliderValue}%`; if(frameSelectTimestampDisplay) frameSelectTimestampDisplay.textContent = `(${formatTime(sliderTime)})`; try { if (video.readyState < 2) { console.log("processVideoFile: Video readyState < 2, adding 'loadeddata' listener."); await new Promise((resolveReady, rejectReady) => { const onLoadedData = () => { video.removeEventListener('loadeddata', onLoadedData); video.removeEventListener('error', onError); console.log("processVideoFile: 'loadeddata' triggered for initial draw."); resolveReady(); }; const onError = (err) => { video.removeEventListener('loadeddata', onLoadedData); video.removeEventListener('error', onError); console.error("Error waiting for 'loadeddata' for initial draw:", err); rejectReady(err || new Error("Video error before initial draw")); }; video.addEventListener('loadeddata', onLoadedData, { once: true }); video.addEventListener('error', onError, { once: true }); video.preload = 'auto'; }); console.log("processVideoFile: Video readyState now:", video.readyState); } console.log(`processVideoFile: Seeking to initialDisplayTime: ${initialDisplayTime.toFixed(3)}s (Frame ~${INITIAL_DISPLAY_FRAME})`); await seekPromise(video, initialDisplayTime); await new Promise(requestAnimationFrame); console.log(`processVideoFile: Drawing frame at currentTime: ${video.currentTime.toFixed(3)}`); ctx.drawImage(video, 0, 0, canvas.width, canvas.height); console.log(`processVideoFile: Initial frame (~${INITIAL_DISPLAY_FRAME}) drawn to canvas.`); status.textContent = `Video loaded (${formatTime(videoDuration)}). Ready for motion detection.`; detectButton.disabled = false; lastExtractionSliderValue = -1; resolve(); } catch (error) { console.error(`processVideoFile: Error seeking/drawing initial frame (~${INITIAL_DISPLAY_FRAME}):`, error); status.textContent = `Error loading initial frame: ${error.message}`; URL.revokeObjectURL(objectURL); activeVideoElement = null; reject(error); } }; video.src = objectURL; }); }
+
+        // --- Frame Extraction (Unchanged) ---
+        async function extractFramesFromVideo(video, objectURL) { /* ... (unchanged) ... */ console.log("extractFramesFromVideo: Entered"); if (!video) throw new Error("Video element not provided for extraction."); imageStack = new ImageStack(); thumbnailStrip.innerHTML = ''; video.preload = 'auto'; const tempCanvas = document.createElement('canvas'); const tempCtx = tempCanvas.getContext('2d'); progressContainer.style.display = 'block'; progressBar.style.width = '0%'; return new Promise(async (resolve, reject) => { let extractionError = null; const startExtractionLogic = async () => { console.log("extractFramesFromVideo: startExtractionLogic called (video readyState:", video.readyState, ")"); try { if (Math.abs(video.duration - videoDuration) > 0.1) { console.warn(`Duration mismatch during extraction: ${video.duration} vs ${videoDuration}. Using ${video.duration}.`); videoDuration = video.duration; totalVideoFramesEstimate = Math.floor(videoDuration * FRAME_RATE_ESTIMATE); if (totalFramesInfoSpan) { totalFramesInfoSpan.textContent = `(Total: ~${totalVideoFramesEstimate} frames / ${formatTime(videoDuration)})`; } } if (!videoDuration || videoDuration === Infinity || !video.videoWidth || !video.videoHeight) { throw new Error('Video metadata became invalid during extraction wait.'); } const scaled = fitToScreen(video.videoWidth, video.videoHeight); tempCanvas.width = scaled.width; tempCanvas.height = scaled.height; const sliderValue = parseInt(frameSelectSlider.value, 10); console.log(`extractFramesFromVideo: Using slider value ${sliderValue}% for start time.`); const startTimePercent = sliderValue / 100.0; let startTime = videoDuration * startTimePercent; startTime = Math.max(0, Math.min(startTime, videoDuration - 0.1)); const timeIncrement = 1.0 / FRAME_RATE_ESTIMATE; let framesExtracted = 0; let actualFramesToExtract = 0; status.textContent = `Calculating frames to extract (max ${NUM_FRAMES_TO_PROCESS})...`; await new Promise(res => setTimeout(res, 0)); for (let i = 0; i < NUM_FRAMES_TO_PROCESS; i++) { const targetTime = startTime + i * timeIncrement; if (targetTime >= videoDuration - (timeIncrement / 2)) { break; } actualFramesToExtract++; } if (actualFramesToExtract === 0 && videoDuration > 0 && startTime < videoDuration) { actualFramesToExtract = 1; } console.log(`extractFramesFromVideo: Determined ${actualFramesToExtract} frames to extract starting from ${startTime.toFixed(2)}s.`); if (actualFramesToExtract < 1) { throw new Error("Cannot extract any frames. Video duration might be too short or start time is at the very end."); } if (actualFramesToExtract === 1) { status.textContent = `Extracting single frame at ${sliderValue}%...`; console.log(`--- Attempting single frame at time: ${startTime.toFixed(3)} ---`); try { await seekPromise(video, startTime); await new Promise(requestAnimationFrame); tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height); const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height); imageStack.addImageData(imageData); framesExtracted = 1; console.log("extractFramesFromVideo: Single frame extracted."); } catch (seekDrawError) { console.error(`Error seeking/drawing single frame at ${startTime.toFixed(3)}:`, seekDrawError); throw new Error(`Failed to extract the first frame at ${startTime.toFixed(2)}s.`); } console.warn(`extractFramesFromVideo: Only 1 frame extracted. Motion detection requires at least 2.`); } else { status.textContent = `Extracting ${actualFramesToExtract} frames starting at ${sliderValue}%...`; for (let i = 0; i < actualFramesToExtract; i++) { const targetTime = startTime + i * timeIncrement; try { await seekPromise(video, targetTime); await new Promise(requestAnimationFrame); tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height); const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height); imageStack.addImageData(imageData); framesExtracted++; const progress = (framesExtracted / actualFramesToExtract) * 100; if (i % 10 === 0 || i === actualFramesToExtract - 1) { status.textContent = `Extracting ${framesExtracted} / ${actualFramesToExtract} frames (from ${sliderValue}%)...`; } progressBar.style.width = `${progress}%`; if (i % 10 === 0) { await new Promise(resolveYield => setTimeout(resolveYield, 0)); } } catch (seekDrawError) { console.error(`Error seeking/drawing frame ${i + 1} at ${targetTime.toFixed(3)}:`, seekDrawError); status.textContent = `Error extracting frame ${i + 1}, skipping...`; await new Promise(resolvePause => setTimeout(resolvePause, 50)); } } console.log(`extractFramesFromVideo: Multi-frame loop finished. Extracted: ${framesExtracted}`); } lastExtractionSliderValue = sliderValue; console.log(`extractFramesFromVideo: Updated lastExtractionSliderValue to ${lastExtractionSliderValue}`); if (imageStack.images.length > 0) { status.textContent = `${imageStack.images.length} frames extracted. Ready for detection.`; resolve(); } else { throw new Error('Frame extraction loop completed, but no frames were stored.'); } } catch (loopError) { console.error("extractFramesFromVideo: Error during extraction logic:", loopError); extractionError = loopError; reject(extractionError); } finally { console.log("extractFramesFromVideo: Reached finally block."); progressContainer.style.display = 'none'; } }; if (video.readyState >= 3) { console.log("extractFramesFromVideo: Video already ready (readyState >= 3). Starting extraction."); await startExtractionLogic(); } else { console.log("extractFramesFromVideo: Video not ready yet. Adding 'canplay' listener."); const canPlayListener = async () => { console.log("extractFramesFromVideo: 'canplay' event triggered."); video.removeEventListener('canplay', canPlayListener); await startExtractionLogic(); }; video.addEventListener('canplay', canPlayListener, { once: true }); setTimeout(() => { if (video.readyState < 3) { console.error("extractFramesFromVideo: Timeout waiting for 'canplay' event."); video.removeEventListener('canplay', canPlayListener); reject(new Error("Timeout waiting for video to be ready for frame extraction.")); } }, 15000); } }); }
+
+        // --- Detect Motion Function (Unchanged) ---
+        async function detectMotion() { /* ... (unchanged) ... */ console.log("detectMotion: Entered"); if (!currentVideoFile) { status.textContent = "No video loaded."; return; } if (!activeVideoElement) { console.warn("detectMotion: No active video element found. Reprocessing file."); status.textContent = "Video element lost. Reloading..."; detectButton.disabled = true; try { await processVideoFile(currentVideoFile); if(detectButton.disabled){ status.textContent = "Failed to reload video."; return; } } catch (err) { status.textContent = "Error reloading video."; return; } if (!activeVideoElement) { status.textContent = "Failed to get active video element after reload."; return; } } const currentSliderValue = parseInt(frameSelectSlider.value, 10); const needsExtraction = (lastExtractionSliderValue === -1) || (currentSliderValue !== lastExtractionSliderValue); console.log(`detectMotion: Needs Extraction? ${needsExtraction} (Last: ${lastExtractionSliderValue}, Current: ${currentSliderValue})`); if (needsExtraction) { status.textContent = "Extracting frames..."; console.log(`Starting frame extraction for slider value ${currentSliderValue}%.`); detectButton.disabled = true; finalBaseImage = null; finalChangeMap = null; const objectURL = activeVideoElement.src; if (!objectURL) { status.textContent = "Error: Cannot get video source for extraction."; detectButton.disabled = false; return; } try { await extractFramesFromVideo(activeVideoElement, objectURL); console.log("detectMotion: Frame extraction complete."); if (imageStack.images.length < 2) { status.textContent = `Extraction complete, but only ${imageStack.images.length} frame(s). Need at least 2 for detection.`; detectButton.disabled = false; return; } status.textContent = "Frames extracted. Starting detection..."; } catch (error) { status.textContent = `Error extracting frames: ${error.message}`; console.error('Detection aborted due to extraction error:', error); detectButton.disabled = false; lastExtractionSliderValue = -1; return; } } if (imageStack.images.length < 2) { status.textContent = 'Need at least two frames to detect motion'; console.log("detectMotion: Not enough frames after check, exiting."); detectButton.disabled = false; return; } status.textContent = 'Detecting motion (accumulating changes)... Please wait.'; detectButton.disabled = true; console.log('Detecting motion using', imageStack.images.length, 'extracted frames'); progressContainer.style.display = 'block'; progressBar.style.width = '0%'; const currentThresholdPercent = parseInt(thresholdSlider.value, 10); try { console.log("detectMotion: Calling imageStack.detectPixelChanges"); const { baseImageData, changeMapImageData } = await imageStack.detectPixelChanges(currentThresholdPercent); console.log("detectMotion: detectPixelChanges returned"); finalBaseImage = baseImageData; finalChangeMap = changeMapImageData; progressBar.style.width = '100%'; if(finalBaseImage && finalChangeMap) { displayResultImage(); status.textContent = `Motion detection complete (${imageStack.images.length} frames compared, threshold ${currentThresholdPercent}%). Red overlay shows changed pixels.`; } else { status.textContent = "Motion detection finished, but result data missing."; console.error("Missing finalBaseImage or finalChangeMap after detection."); finalBaseImage = null; finalChangeMap = null; } console.log('Motion detection complete.'); } catch (error) { console.error('Motion detection failed:', error); status.textContent = 'Error during motion detection: ' + error.message; finalBaseImage = null; finalChangeMap = null; } finally { detectButton.disabled = false; console.log(`detectMotion: Finally block. Button disabled: ${detectButton.disabled}`); setTimeout(() => { progressContainer.style.display = 'none'; }, 500); } }
+
+        // --- Display Result Image (REVISED - Temp Canvas Method) ---
+        function displayResultImage() {
+            if (!finalBaseImage || !finalChangeMap) {
+                status.textContent = 'No result image to display';
+                console.log('No base image or change map data');
+                if (ctx) { ctx.clearRect(0, 0, canvas.width, canvas.height); }
+                canvas.removeAttribute('width'); canvas.removeAttribute('height');
+                return;
+            }
+            canvas.width = finalBaseImage.width;
+            canvas.height = finalBaseImage.height;
+
+            // 1. Draw the base image (fully opaque)
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear first
+            ctx.globalAlpha = 1.0;
+            ctx.putImageData(finalBaseImage, 0, 0);
+
+            // --- Use Temporary Canvas for Overlay ---
+            // 2. Create a temporary canvas for the change map
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = finalChangeMap.width;
+            tempCanvas.height = finalChangeMap.height;
+            const tempCtx = tempCanvas.getContext('2d');
+
+            // 3. Put the change map data onto the temporary canvas
+            // This respects the alpha in finalChangeMap (red pixels are opaque, others are transparent)
+            tempCtx.putImageData(finalChangeMap, 0, 0);
+
+            // 4. Set the desired global alpha on the main canvas
+            ctx.globalAlpha = OVERLAY_ALPHA;
+
+            // 5. Draw the temporary canvas (containing only red pixels) onto the main canvas
+            // This applies the globalAlpha only to the red pixels being drawn.
+            ctx.drawImage(tempCanvas, 0, 0);
+            // --- End Temporary Canvas Method ---
+
+            // 6. Reset globalAlpha back to default
+            ctx.globalAlpha = 1.0;
+
+            console.log(`Result image rendered (Reference Frame + ${OVERLAY_ALPHA * 100}% Alpha Change Overlay via temp canvas)`);
+        }
+
+        // --- Reset Application State (Unchanged) ---
+        function resetApplication() { /* ... (unchanged) ... */ console.log('Application reset'); imageStack = new ImageStack(); finalBaseImage = null; finalChangeMap = null; if(ctx) { ctx.clearRect(0, 0, canvas.width, canvas.height); } canvas.removeAttribute('width'); canvas.removeAttribute('height'); thumbnailStrip.innerHTML = ''; detectButton.disabled = true; status.textContent = 'Upload an MP4 video to begin'; progressContainer.style.display = 'none'; progressBar.style.width = '0%'; if (frameSelectSliderContainer) frameSelectSliderContainer.style.display = 'none'; if (frameSelectSlider) { frameSelectSlider.disabled = true; frameSelectSlider.value = 0; } if (frameSelectValueDisplay) frameSelectValueDisplay.textContent = '0%'; if (frameSelectTimestampDisplay) frameSelectTimestampDisplay.textContent = '(--:--)'; if (totalFramesInfoSpan) totalFramesInfoSpan.textContent = '(Total: N/A)'; videoDuration = 0; totalVideoFramesEstimate = 0; currentVideoFile = null; lastExtractionSliderValue = -1; thresholdSlider.value = 15; thresholdValueDisplay.textContent = '15'; if (activeVideoElement) { console.log("Reset: Cleaning up active video element."); activeVideoElement.pause(); activeVideoElement.removeAttribute('src'); activeVideoElement.load(); activeVideoElement = null; } try { document.getElementById('imageInput').value = ''; } catch(e){} }
+
+        // --- Save Result Image (REVISED - Temp Canvas Method) ---
+        function saveImage() {
+            if (!finalBaseImage || !finalChangeMap) {
+                status.textContent = 'No result image available to save';
+                return;
+            }
+            // Use the same temp canvas method for saving to ensure consistency
+            const cleanCanvas = document.createElement('canvas');
+            cleanCanvas.width = finalBaseImage.width;
+            cleanCanvas.height = finalBaseImage.height;
+            const cleanCtx = cleanCanvas.getContext('2d');
+
+            // 1. Draw base image
+            cleanCtx.globalAlpha = 1.0;
+            cleanCtx.putImageData(finalBaseImage, 0, 0);
+
+            // 2. Create temp canvas for change map
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = finalChangeMap.width;
+            tempCanvas.height = finalChangeMap.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.putImageData(finalChangeMap, 0, 0);
+
+            // 3. Draw temp canvas onto clean canvas with alpha
+            cleanCtx.globalAlpha = OVERLAY_ALPHA;
+            cleanCtx.drawImage(tempCanvas, 0, 0);
+            cleanCtx.globalAlpha = 1.0; // Reset alpha
+
+            // 4. Create download link
+            const link = document.createElement('a');
+            link.download = 'motion_detection_result.png';
+            link.href = cleanCanvas.toDataURL('image/png');
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            status.textContent = 'Result image saved as motion_detection_result.png';
+            console.log('Result image saved');
+        }
+
+    </script>
+</body>
+</html>
