@@ -1,7 +1,8 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Aquiplicity 2025 - Motion Detector (Force Consecutive Compare)</title> <!-- Updated Title -->
+    <!-- Updated Title to reflect dynamic slider -->
+    <title>Aquiplicity 2025 - Motion Detector (Dynamic Interval Max)</title>
     <style>
         /* --- CSS Styles (Unchanged) --- */
         body { margin: 0; padding: 0; display: flex; flex-direction: column; height: 100vh; font-family: Arial, sans-serif; }
@@ -23,6 +24,8 @@
         .slider-container { margin: 0 10px; display: flex; align-items: center; }
         .slider-label { margin-right: 5px; font-family: Arial, sans-serif; font-size: 0.85em; }
         input[type="range"] { width: 120px; height: 5px; cursor: pointer; }
+        /* Style for disabled interval slider */
+        #intervalSlider:disabled { cursor: not-allowed; opacity: 0.5; }
         .slider-value { margin-left: 5px; min-width: 35px; font-family: 'Courier New', Courier, monospace; font-size: 0.85em; background-color: #eee; padding: 2px 4px; border-radius: 3px; text-align: center; }
         .slider-timestamp { margin-left: 5px; font-size: 0.8em; color: #444; font-family: 'Courier New', Courier, monospace; min-width: 55px; display: inline-block; text-align: right; }
         .action-button { background-color: #4CAF50; color: white; border: none; box-shadow: 0 2px #3a8a40; }
@@ -36,13 +39,14 @@
         .control-group { border: 1px solid #ddd; padding: 5px; margin: 5px; border-radius: 4px; background-color: #f9f9f9; display: flex; align-items: center; flex-wrap: wrap; }
         .control-group > span { font-weight: bold; font-size: 0.9em; margin-right: 10px; }
         #totalFramesInfo { font-size: 0.8em; color: #555; margin-left: 5px; margin-right: 10px; }
-        #thresholdControl, #intervalControl { margin-left: 15px; } /* Apply margin to both */
+        #thresholdControl, #intervalControl { margin-left: 15px; }
+        #intervalSliderMaxLabel { font-size: 0.75em; color: #666; margin-left: 3px; } /* Label for max interval */
     </style>
 </head>
 <body>
     <div id="marqueeContainer">
         <!-- Updated Marquee Text -->
-        <div id="marquee">Load MP4. Select start frame. Interval slider is present but NOT used. Click Detect Motion (always extracts/compares up to 300 CONSECUTIVE frames).</div>
+        <div id="marquee">Load MP4. Interval slider MAX adjusts based on available video duration from start frame. Click Detect Motion (TARGETS 300 samples, stops if video ends).</div>
     </div>
     <div id="controls">
         <input type="file" id="imageInput" accept="video/mp4">
@@ -59,11 +63,14 @@
             </div>
         </div>
 
-        <!-- Interval Slider - No longer affects extraction -->
+        <!-- Interval Slider - Now with Dynamic Max -->
         <div class="control-group" id="intervalControl">
-            <span class="slider-label">Frame Sample Interval (NOT USED):</span>
-            <input type="range" id="intervalSlider" min="0" max="120" step="1" value="0">
+            <span class="slider-label">Frame Sample Interval:</span>
+            <!-- Set initial max high, will be adjusted -->
+            <input type="range" id="intervalSlider" min="0" max="120" step="1" value="0" disabled>
             <span class="slider-value" id="intervalSlider-value">0</span> frames apart
+             <!-- Display dynamic max -->
+            <span id="intervalSliderMaxLabel">(Max: 120)</span>
         </div>
 
          <div class="control-group" id="thresholdControl">
@@ -84,18 +91,53 @@
 
     <script type="text/javascript">
         // --- Constants ---
-        const NUM_FRAMES_TO_PROCESS = 300; // Target number of frames
+        const NUM_FRAMES_TO_PROCESS = 300; // Target number of subsequent frames to sample
         const FRAME_RATE_ESTIMATE = 30;
         const CHANGE_COLOR = [255, 0, 0, 255];
         const SEEK_TIMEOUT = 8000;
         const OVERLAY_ALPHA = 0.3;
         const INITIAL_DISPLAY_FRAME = 25;
+        const DEFAULT_INTERVAL_MAX = 120; // Default max before video loaded
 
         // --- ImageStack Class (Unchanged) ---
-        class ImageStack { /* ... (unchanged) ... */ constructor() { this.images = []; this.width = 0; this.height = 0; } addImageData(imageData) { if (this.images.length === 0) { this.width = imageData.width; this.height = imageData.height; } else if (imageData.width !== this.width || imageData.height !== this.height) { console.warn("Inconsistent ImageData dimensions added! Resizing to fit."); const tempCanvas = document.createElement('canvas'); const tempCtx = tempCanvas.getContext('2d'); tempCanvas.width = this.width; tempCanvas.height = this.height; const tempImg = document.createElement('canvas'); tempImg.width = imageData.width; tempImg.height = imageData.height; tempImg.getContext('2d').putImageData(imageData, 0, 0); tempCtx.drawImage(tempImg, 0, 0, this.width, this.height); imageData = tempCtx.getImageData(0, 0, this.width, this.height); } this.images.push(imageData); } async detectPixelChanges(differencePercentage) { if (this.images.length < 2) { throw new Error("Need at least two frames (reference + 1) to detect changes."); } const referenceImageData = this.images[0]; const referenceData = referenceImageData.data; const width = this.width; const height = this.height; const numPixels = width * height; console.log(`Starting accumulated change detection against reference frame (Frame 0) using ${this.images.length} frames. Difference Threshold: ${differencePercentage}%`); status.textContent = `Detecting changes across ${this.images.length} frames (accumulating)...`; await new Promise(resolve => setTimeout(resolve, 0)); const changeMapImageData = new ImageData(width, height); const changeMapData = changeMapImageData.data; const thresholdValue = (differencePercentage / 100.0) * 255.0; console.log(`Calculated comparison threshold: ${thresholdValue.toFixed(2)} (out of 255)`); for (let frameIdx = 1; frameIdx < this.images.length; frameIdx++) { const currentImageData = this.images[frameIdx]; const currentData = currentImageData.data; // Status message reflects actual comparison count
-              status.textContent = `Comparing Frame ${frameIdx + 1} / ${this.images.length} to Reference...`; progressBar.style.width = `${((frameIdx) / (this.images.length - 1)) * 100}%`; await new Promise(resolve => setTimeout(resolve, 0)); for (let p = 0; p < numPixels; p++) { const idx = p * 4; if (changeMapData[idx + 3] === 0) { const r1 = referenceData[idx], g1 = referenceData[idx + 1], b1 = referenceData[idx + 2]; const r2 = currentData[idx], g2 = currentData[idx + 1], b2 = currentData[idx + 2]; const diff = (Math.abs(r1 - r2) + Math.abs(g1 - g2) + Math.abs(b1 - b2)) / 3.0; if (diff > thresholdValue) { changeMapData[idx] = CHANGE_COLOR[0]; changeMapData[idx + 1] = CHANGE_COLOR[1]; changeMapData[idx + 2] = CHANGE_COLOR[2]; changeMapData[idx + 3] = CHANGE_COLOR[3]; } } } } console.log("Accumulated change detection completed."); progressBar.style.width = '100%'; await new Promise(resolve => setTimeout(resolve, 10)); return { baseImageData: referenceImageData, changeMapImageData: changeMapImageData }; } }
+        class ImageStack {
+             constructor() { this.images = []; this.width = 0; this.height = 0; }
+             addImageData(imageData) { if (this.images.length === 0) { this.width = imageData.width; this.height = imageData.height; } else if (imageData.width !== this.width || imageData.height !== this.height) { console.warn("Inconsistent ImageData dimensions added! Resizing to fit."); const tempCanvas = document.createElement('canvas'); const tempCtx = tempCanvas.getContext('2d'); tempCanvas.width = this.width; tempCanvas.height = this.height; const tempImg = document.createElement('canvas'); tempImg.width = imageData.width; tempImg.height = imageData.height; tempImg.getContext('2d').putImageData(imageData, 0, 0); tempCtx.drawImage(tempImg, 0, 0, this.width, this.height); imageData = tempCtx.getImageData(0, 0, this.width, this.height); } this.images.push(imageData); }
+             async detectPixelChanges(differencePercentage) {
+                if (this.images.length < 2) { throw new Error("Need at least two frames (reference + 1) to detect changes."); }
+                const referenceImageData = this.images[0]; const referenceData = referenceImageData.data;
+                const width = this.width; const height = this.height; const numPixels = width * height;
+                const numFramesToCompare = this.images.length - 1;
+                console.log(`Starting change detection: Comparing all ${numFramesToCompare} subsequent frames against reference frame (Frame 0). Threshold: ${differencePercentage}%`);
+                status.textContent = `Detecting changes against reference frame across ${this.images.length} total extracted frames...`;
+                await new Promise(resolve => setTimeout(resolve, 0));
+                const changeMapImageData = new ImageData(width, height); const changeMapData = changeMapImageData.data;
+                const thresholdValue = (differencePercentage / 100.0) * 255.0;
+                console.log(`Calculated comparison threshold: ${thresholdValue.toFixed(2)} (out of 255)`);
+                for (let frameIdx = 1; frameIdx < this.images.length; frameIdx++) {
+                    const currentImageData = this.images[frameIdx]; const currentData = currentImageData.data;
+                    status.textContent = `Comparing Subsequent Frame ${frameIdx} / ${numFramesToCompare} to Reference Frame...`;
+                    progressBar.style.width = `${((frameIdx) / numFramesToCompare) * 100}%`;
+                    await new Promise(resolve => setTimeout(resolve, 0));
+                    for (let p = 0; p < numPixels; p++) {
+                        const idx = p * 4;
+                        const r1 = referenceData[idx], g1 = referenceData[idx + 1], b1 = referenceData[idx + 2];
+                        const r2 = currentData[idx], g2 = currentData[idx + 1], b2 = currentData[idx + 2];
+                        const diff = (Math.abs(r1 - r2) + Math.abs(g1 - g2) + Math.abs(b1 - b2)) / 3.0;
+                        if (diff > thresholdValue) {
+                            changeMapData[idx] = CHANGE_COLOR[0]; changeMapData[idx + 1] = CHANGE_COLOR[1];
+                            changeMapData[idx + 2] = CHANGE_COLOR[2]; changeMapData[idx + 3] = CHANGE_COLOR[3];
+                        }
+                    }
+                }
+                console.log(`Change detection completed. Compared ${numFramesToCompare} frames to reference. Change map reflects pixels differing from reference in ANY subsequent frame.`);
+                progressBar.style.width = '100%';
+                await new Promise(resolve => setTimeout(resolve, 10));
+                return { baseImageData: referenceImageData, changeMapImageData: changeMapImageData };
+            }
+         }
 
-        // --- Global Variables ---
+        // --- Global Variables (Unchanged) ---
         let canvas = document.getElementById('canvasOutput'); let ctx = canvas.getContext('2d');
         let imageStack = new ImageStack(); let status = document.getElementById('status');
         let detectButton = document.getElementById('detectButton'); let thumbnailStrip = document.getElementById('thumbnailStrip');
@@ -108,231 +150,286 @@
         let currentVideoFile = null;
         let activeVideoElement = null;
         let intervalSlider = null; let intervalValueDisplay = null;
+        let intervalSliderMaxLabel = null; // Label for dynamic max
 
 
         // --- Helper Function to Format Time (Unchanged) ---
-        function formatTime(totalSeconds) { /* ... (unchanged) ... */ if (isNaN(totalSeconds) || totalSeconds < 0 || !isFinite(totalSeconds)) { return "--:--"; } totalSeconds = Math.max(0, totalSeconds); const hours = Math.floor(totalSeconds / 3600); const minutes = Math.floor((totalSeconds % 3600) / 60); const seconds = Math.floor(totalSeconds % 60); let timeString = ""; if (hours > 0) { timeString += `${String(hours).padStart(2, '0')}:`; timeString += `${String(minutes).padStart(2, '0')}:`; timeString += `${String(seconds).padStart(2, '0')}`; } else { timeString += `${String(minutes).padStart(2, '0')}:`; timeString += `${String(seconds).padStart(2, '0')}`; } return timeString; }
+        function formatTime(totalSeconds) { if (isNaN(totalSeconds) || totalSeconds < 0 || !isFinite(totalSeconds)) { return "--:--"; } totalSeconds = Math.max(0, totalSeconds); const hours = Math.floor(totalSeconds / 3600); const minutes = Math.floor((totalSeconds % 3600) / 60); const seconds = Math.floor(totalSeconds % 60); let timeString = ""; if (hours > 0) { timeString += `${String(hours).padStart(2, '0')}:`; timeString += `${String(minutes).padStart(2, '0')}:`; timeString += `${String(seconds).padStart(2, '0')}`; } else { timeString += `${String(minutes).padStart(2, '0')}:`; timeString += `${String(seconds).padStart(2, '0')}`; } return timeString; }
 
-        // --- Initialization (Unchanged functionally, Interval Slider listener remains) ---
+        // --- NEW: Function to Update Interval Slider Max ---
+        function updateIntervalSliderMax() {
+            if (!intervalSlider || !videoDuration || videoDuration <= 0 || !isFinite(videoDuration) || !frameSelectSlider) {
+                console.log("Cannot update interval max: Missing elements or video data.");
+                 // Reset to default if video data invalid
+                 intervalSlider.max = DEFAULT_INTERVAL_MAX;
+                 intervalSlider.disabled = true;
+                 if(intervalSliderMaxLabel) intervalSliderMaxLabel.textContent = `(Max: ${DEFAULT_INTERVAL_MAX})`;
+                 if (parseInt(intervalSlider.value) > DEFAULT_INTERVAL_MAX) {
+                      intervalSlider.value = DEFAULT_INTERVAL_MAX;
+                      if(intervalValueDisplay) intervalValueDisplay.textContent = DEFAULT_INTERVAL_MAX;
+                 }
+                 return;
+            }
+
+            // Calculate available duration from the selected start point
+            const startPercent = parseInt(frameSelectSlider.value, 10) / 100.0;
+            const startTime = videoDuration * startPercent;
+            const availableDuration = videoDuration - startTime;
+
+            let maxInterval = 0; // Default to 0 if calculation fails or duration too short
+
+            // Need enough time for at least one frame jump (interval 0 means jump 1)
+            const minTimeForOneJump = 1.0 / FRAME_RATE_ESTIMATE;
+
+            if (availableDuration > minTimeForOneJump && NUM_FRAMES_TO_PROCESS > 0) {
+                // Calculate the maximum theoretical frame jump possible
+                 // Time needed = samples * jump / fps <= availableDuration
+                 // jump <= availableDuration * fps / samples
+                const maxPossibleFrameJump = (availableDuration * FRAME_RATE_ESTIMATE) / NUM_FRAMES_TO_PROCESS;
+
+                // Interval is one less than the frame jump
+                // Ensure it's at least 0
+                maxInterval = Math.max(0, Math.floor(maxPossibleFrameJump - 1));
+            } else {
+                 console.log(`Available duration (${availableDuration.toFixed(2)}s) too short to calculate meaningful max interval.`);
+            }
+
+
+            console.log(`Updating Interval Slider: StartTime=${startTime.toFixed(2)}s, AvailableDuration=${availableDuration.toFixed(2)}s, Calculated Max Interval=${maxInterval}`);
+
+            // Update the slider's max attribute
+            intervalSlider.max = maxInterval;
+            intervalSlider.disabled = false; // Enable the slider now
+
+            // Update the label displaying the max
+            if (intervalSliderMaxLabel) {
+                intervalSliderMaxLabel.textContent = `(Max: ${maxInterval})`;
+            }
+
+            // Clamp the current value if it exceeds the new maximum
+            const currentValue = parseInt(intervalSlider.value, 10);
+            if (currentValue > maxInterval) {
+                console.log(`Clamping interval slider value from ${currentValue} to new max ${maxInterval}`);
+                intervalSlider.value = maxInterval;
+                // Also update the text display next to the slider
+                if (intervalValueDisplay) {
+                    intervalValueDisplay.textContent = maxInterval;
+                }
+            }
+        }
+
+        // --- Initialization ---
         document.addEventListener('DOMContentLoaded', () => {
             if (!canvas || !ctx) { console.error('Canvas context failed'); status.textContent = 'Error: Canvas init failed'; return; }
             document.getElementById('imageInput').addEventListener('change', handleVideoUpload);
 
-            // Frame Selection Slider
+            // --- Get references to all elements ---
             frameSelectSliderContainer = document.getElementById('frameSelectContainer');
             frameSelectSlider = document.getElementById('frameSelectSlider');
             frameSelectValueDisplay = document.getElementById('frameSelectSlider-value');
             frameSelectTimestampDisplay = document.getElementById('frameSelectSlider-timestamp');
             totalFramesInfoSpan = document.getElementById('totalFramesInfo');
-            frameSelectSlider.addEventListener('input', () => {
-                const sliderValue = parseInt(frameSelectSlider.value, 10);
-                frameSelectValueDisplay.textContent = `${sliderValue}%`;
-                let currentTime = 0;
-                if (videoDuration && videoDuration > 0 && isFinite(videoDuration)) {
-                    currentTime = videoDuration * (sliderValue / 100.0);
-                }
-                if (frameSelectTimestampDisplay) {
-                    frameSelectTimestampDisplay.textContent = `(${formatTime(currentTime)})`;
-                }
-            });
-
-            // Threshold Slider
             thresholdSlider = document.getElementById('thresholdSlider');
             thresholdValueDisplay = document.getElementById('thresholdSlider-value');
-            thresholdSlider.addEventListener('input', () => {
-                thresholdValueDisplay.textContent = thresholdSlider.value;
-            });
-
-            // Interval Slider (Listener remains but value isn't used for extraction)
             intervalSlider = document.getElementById('intervalSlider');
             intervalValueDisplay = document.getElementById('intervalSlider-value');
-            intervalSlider.addEventListener('input', () => {
-                intervalValueDisplay.textContent = intervalSlider.value;
-            });
+            intervalSliderMaxLabel = document.getElementById('intervalSliderMaxLabel'); // Get max label
 
+            // --- Frame Selection Slider Listener (NOW updates interval max) ---
+            if (frameSelectSlider) {
+                frameSelectSlider.addEventListener('input', () => {
+                    const sliderValue = parseInt(frameSelectSlider.value, 10);
+                    if(frameSelectValueDisplay) frameSelectValueDisplay.textContent = `${sliderValue}%`;
+                    let currentTime = 0;
+                    if (videoDuration && videoDuration > 0 && isFinite(videoDuration)) {
+                        currentTime = videoDuration * (sliderValue / 100.0);
+                    }
+                    if (frameSelectTimestampDisplay) {
+                        frameSelectTimestampDisplay.textContent = `(${formatTime(currentTime)})`;
+                    }
+                    // --- Recalculate interval max when start changes ---
+                    updateIntervalSliderMax();
+                });
+            }
+
+            // Threshold Slider Listener (Unchanged)
+            if (thresholdSlider) {
+                 thresholdSlider.addEventListener('input', () => {
+                     if(thresholdValueDisplay) thresholdValueDisplay.textContent = thresholdSlider.value;
+                 });
+            }
+
+            // Interval Slider Listener (Updates its own value display)
+            if (intervalSlider) {
+                intervalSlider.addEventListener('input', () => {
+                    if(intervalValueDisplay) intervalValueDisplay.textContent = intervalSlider.value;
+                });
+            }
 
             console.log('Page loaded');
-            resetApplication();
+            resetApplication(); // Initial reset
         });
 
         // --- Promise-based Video Seek Function (Unchanged) ---
-        const seekPromise = (video, time) => { /* ... (unchanged) ... */ return new Promise((resolveSeek, rejectSeek) => { const seekTime = Math.max(0, Math.min(time, video.duration)); if (Math.abs(video.currentTime - seekTime) < 0.05) { requestAnimationFrame(resolveSeek); return; } const timeout = setTimeout(() => { console.error(`Seek to ${seekTime.toFixed(2)} timed out after ${SEEK_TIMEOUT}ms`); video.removeEventListener('seeked', onSeeked); video.removeEventListener('error', onError); rejectSeek(new Error(`Seek to ${seekTime.toFixed(2)} timed out`)); }, SEEK_TIMEOUT); const onSeeked = () => { clearTimeout(timeout); video.removeEventListener('seeked', onSeeked); video.removeEventListener('error', onError); requestAnimationFrame(resolveSeek); }; const onError = (err) => { clearTimeout(timeout); console.error(`Video error during seek to ${seekTime.toFixed(2)}:`, err); video.removeEventListener('seeked', onSeeked); video.removeEventListener('error', onError); rejectSeek(err || new Error(`Unknown error during seek to ${seekTime.toFixed(2)}`)); }; video.addEventListener('seeked', onSeeked, { once: true }); video.addEventListener('error', onError, { once: true }); if (video.readyState < video.HAVE_METADATA) { clearTimeout(timeout); console.error("Seek cancelled: Video metadata not ready."); video.removeEventListener('seeked', onSeeked); video.removeEventListener('error', onError); return rejectSeek(new Error("Video metadata not ready for seek.")); } video.currentTime = seekTime; }); };
+        const seekPromise = (video, time) => { return new Promise((resolveSeek, rejectSeek) => { const seekTime = Math.max(0, Math.min(time, video.duration)); if (Math.abs(video.currentTime - seekTime) < 0.05) { requestAnimationFrame(resolveSeek); return; } const timeout = setTimeout(() => { console.error(`Seek to ${seekTime.toFixed(2)} timed out after ${SEEK_TIMEOUT}ms`); video.removeEventListener('seeked', onSeeked); video.removeEventListener('error', onError); rejectSeek(new Error(`Seek to ${seekTime.toFixed(2)} timed out`)); }, SEEK_TIMEOUT); const onSeeked = () => { clearTimeout(timeout); video.removeEventListener('seeked', onSeeked); video.removeEventListener('error', onError); requestAnimationFrame(resolveSeek); }; const onError = (err) => { clearTimeout(timeout); console.error(`Video error during seek to ${seekTime.toFixed(2)}:`, err); video.removeEventListener('seeked', onSeeked); video.removeEventListener('error', onError); rejectSeek(err || new Error(`Unknown error during seek to ${seekTime.toFixed(2)}`)); }; video.addEventListener('seeked', onSeeked, { once: true }); video.addEventListener('error', onError, { once: true }); if (video.readyState < video.HAVE_METADATA) { clearTimeout(timeout); console.error("Seek cancelled: Video metadata not ready."); video.removeEventListener('seeked', onSeeked); video.removeEventListener('error', onError); return rejectSeek(new Error("Video metadata not ready for seek.")); } video.currentTime = seekTime; }); };
 
         // --- Fit Image/Video to Screen (Unchanged) ---
-        function fitToScreen(imgWidth, imgHeight) { /* ... (unchanged) ... */ const workingArea = document.getElementById('workingArea'); const maxWidth = workingArea.clientWidth - 40; const maxHeight = workingArea.clientHeight - 100; const safeMaxWidth = Math.max(100, maxWidth); const safeMaxHeight = Math.max(100, maxHeight); const aspectRatio = imgWidth / imgHeight; let newWidth = imgWidth; let newHeight = imgHeight; if (newWidth > safeMaxWidth) { newWidth = safeMaxWidth; newHeight = newWidth / aspectRatio; } if (newHeight > safeMaxHeight) { newHeight = safeMaxHeight; newWidth = newHeight * aspectRatio; } return { width: Math.max(1, Math.floor(newWidth)), height: Math.max(1, Math.floor(newHeight)) }; }
+        function fitToScreen(imgWidth, imgHeight) { const workingArea = document.getElementById('workingArea'); const maxWidth = workingArea.clientWidth - 40; const maxHeight = workingArea.clientHeight - 100; const safeMaxWidth = Math.max(100, maxWidth); const safeMaxHeight = Math.max(100, maxHeight); const aspectRatio = imgWidth / imgHeight; let newWidth = imgWidth; let newHeight = imgHeight; if (newWidth > safeMaxWidth) { newWidth = safeMaxWidth; newHeight = newWidth / aspectRatio; } if (newHeight > safeMaxHeight) { newHeight = safeMaxHeight; newWidth = newHeight * aspectRatio; } return { width: Math.max(1, Math.floor(newWidth)), height: Math.max(1, Math.floor(newHeight)) }; }
 
         // --- Video Upload Handler (Unchanged) ---
-        async function handleVideoUpload(e) { /* ... (unchanged) ... */ const files = e.target.files; if (!files || files.length === 0) { status.textContent = 'No video file selected'; return; } const file = files[0]; if (!file.type.startsWith('video/mp4')) { status.textContent = 'Please select an MP4 video file.'; e.target.value = ''; return; } console.log("handleVideoUpload: Starting processing for", file.name); resetApplication(); detectButton.disabled = true; currentVideoFile = file; status.textContent = `Loading video: ${file.name}...`; try { await processVideoFile(file); console.log(`handleVideoUpload: processVideoFile completed for ${file.name}.`); } catch (error) { console.error('Error processing video:', error); status.textContent = `Error processing video: ${error.message}`; resetApplication(); } finally { try { e.target.value = ''; } catch(err) { console.warn("Could not clear file input."); } } }
+        async function handleVideoUpload(e) { const files = e.target.files; if (!files || files.length === 0) { status.textContent = 'No video file selected'; return; } const file = files[0]; if (!file.type.startsWith('video/mp4')) { status.textContent = 'Please select an MP4 video file.'; e.target.value = ''; return; } console.log("handleVideoUpload: Starting processing for", file.name); resetApplication(); detectButton.disabled = true; currentVideoFile = file; status.textContent = `Loading video: ${file.name}...`; try { await processVideoFile(file); console.log(`handleVideoUpload: processVideoFile completed for ${file.name}.`); } catch (error) { console.error('Error processing video:', error); status.textContent = `Error processing video: ${error.message}`; resetApplication(); } finally { try { const fileInput = document.getElementById('imageInput'); if(fileInput) fileInput.value = ''; } catch(err) { console.warn("Could not clear file input."); } } }
 
         // --- Thumbnail Creation (Unchanged) ---
-        async function createThumbnail(imageData, title) { /* ... (unchanged) ... */ return new Promise((resolve) => { const thumbCanvas = document.createElement('canvas'); thumbCanvas.width = 150; thumbCanvas.height = 112; const thumbCtx = thumbCanvas.getContext('2d'); const tempCanvas = document.createElement('canvas'); tempCanvas.width = imageData.width; tempCanvas.height = imageData.height; tempCanvas.getContext('2d').putImageData(imageData, 0, 0); const aspect = imageData.width / imageData.height; let drawWidth = 150, drawHeight = 112; if (aspect > 150/112) { drawHeight = 150 / aspect; } else { drawWidth = 112 * aspect; } const drawX = (150 - drawWidth) / 2; const drawY = (112 - drawHeight) / 2; thumbCtx.fillStyle = '#ddd'; thumbCtx.fillRect(0, 0, 150, 112); thumbCtx.drawImage(tempCanvas, drawX, drawY, drawWidth, drawHeight); const thumbImg = new Image(); thumbImg.src = thumbCanvas.toDataURL('image/png'); thumbImg.className = 'thumbnail'; thumbImg.title = title; resolve(thumbImg); }); }
+        async function createThumbnail(imageData, title) { return new Promise((resolve) => { const thumbCanvas = document.createElement('canvas'); thumbCanvas.width = 150; thumbCanvas.height = 112; const thumbCtx = thumbCanvas.getContext('2d'); const tempCanvas = document.createElement('canvas'); tempCanvas.width = imageData.width; tempCanvas.height = imageData.height; tempCanvas.getContext('2d').putImageData(imageData, 0, 0); const aspect = imageData.width / imageData.height; let drawWidth = 150, drawHeight = 112; if (aspect > 150/112) { drawHeight = 150 / aspect; } else { drawWidth = 112 * aspect; } const drawX = (150 - drawWidth) / 2; const drawY = (112 - drawHeight) / 2; thumbCtx.fillStyle = '#ddd'; thumbCtx.fillRect(0, 0, 150, 112); thumbCtx.drawImage(tempCanvas, drawX, drawY, drawWidth, drawHeight); const thumbImg = new Image(); thumbImg.src = thumbCanvas.toDataURL('image/png'); thumbImg.className = 'thumbnail'; thumbImg.title = title; resolve(thumbImg); }); }
 
-        // --- Process Video Metadata (Unchanged - Displays frame 25) ---
-        async function processVideoFile(file) { /* ... (unchanged) ... */ console.log("processVideoFile: Entered"); const video = document.createElement('video'); activeVideoElement = video; const objectURL = URL.createObjectURL(file); video.muted = true; video.preload = 'metadata'; imageStack = new ImageStack(); thumbnailStrip.innerHTML = ''; return new Promise(async (resolve, reject) => { video.onerror = (e) => { console.error("processVideoFile: video.onerror triggered"); URL.revokeObjectURL(objectURL); progressContainer.style.display = 'none'; activeVideoElement = null; reject(new Error(`Failed to load video metadata: ${e.message || 'Unknown error'}`)); }; video.onloadedmetadata = async () => { console.log("processVideoFile: video.onloadedmetadata triggered"); videoDuration = video.duration; totalVideoFramesEstimate = Math.floor(videoDuration * FRAME_RATE_ESTIMATE); console.log(`Video metadata: ${video.videoWidth}x${video.videoHeight}, Duration: ${videoDuration.toFixed(2)}s (Est. ${totalVideoFramesEstimate} frames)`); if (!videoDuration || videoDuration === Infinity || !video.videoWidth || !video.videoHeight) { if(totalFramesInfoSpan) totalFramesInfoSpan.textContent = `(Total: Invalid Meta)`; URL.revokeObjectURL(objectURL); activeVideoElement = null; return reject(new Error('Video metadata invalid.')); } if (totalFramesInfoSpan) { totalFramesInfoSpan.textContent = `(Total: ~${totalVideoFramesEstimate} frames / ${formatTime(videoDuration)})`; } frameSelectSliderContainer.style.display = 'flex'; frameSelectSlider.disabled = false; const scaled = fitToScreen(video.videoWidth, video.videoHeight); canvas.width = scaled.width; canvas.height = scaled.height; ctx.clearRect(0, 0, canvas.width, canvas.height); status.textContent = `Video loaded. Seeking to initial frame...`; let initialDisplayTime = (INITIAL_DISPLAY_FRAME -1) / FRAME_RATE_ESTIMATE; initialDisplayTime = Math.max(0, Math.min(initialDisplayTime, videoDuration - 0.1)); const currentSliderValue = parseInt(frameSelectSlider.value, 10); const sliderTime = videoDuration * (currentSliderValue / 100.0); if(frameSelectValueDisplay) frameSelectValueDisplay.textContent = `${currentSliderValue}%`; if(frameSelectTimestampDisplay) frameSelectTimestampDisplay.textContent = `(${formatTime(sliderTime)})`; try { if (video.readyState < 2) { console.log("processVideoFile: Video readyState < 2, adding 'loadeddata' listener."); await new Promise((resolveReady, rejectReady) => { const onLoadedData = () => { video.removeEventListener('loadeddata', onLoadedData); video.removeEventListener('error', onError); console.log("processVideoFile: 'loadeddata' triggered for initial draw."); resolveReady(); }; const onError = (err) => { video.removeEventListener('loadeddata', onLoadedData); video.removeEventListener('error', onError); console.error("Error waiting for 'loadeddata' for initial draw:", err); rejectReady(err || new Error("Video error before initial draw")); }; video.addEventListener('loadeddata', onLoadedData, { once: true }); video.addEventListener('error', onError, { once: true }); video.preload = 'auto'; }); console.log("processVideoFile: Video readyState now:", video.readyState); } console.log(`processVideoFile: Seeking to initialDisplayTime: ${initialDisplayTime.toFixed(3)}s (Frame ~${INITIAL_DISPLAY_FRAME})`); await seekPromise(video, initialDisplayTime); await new Promise(requestAnimationFrame); console.log(`processVideoFile: Drawing frame at currentTime: ${video.currentTime.toFixed(3)}`); ctx.drawImage(video, 0, 0, canvas.width, canvas.height); console.log(`processVideoFile: Initial frame (~${INITIAL_DISPLAY_FRAME}) drawn to canvas.`); status.textContent = `Video loaded (${formatTime(videoDuration)}). Ready for motion detection.`; detectButton.disabled = false; resolve(); } catch (error) { console.error(`processVideoFile: Error seeking/drawing initial frame (~${INITIAL_DISPLAY_FRAME}):`, error); status.textContent = `Error loading initial frame: ${error.message}`; URL.revokeObjectURL(objectURL); activeVideoElement = null; reject(error); } }; video.src = objectURL; }); }
-
-        // --- Frame Extraction (REVISED - Ignores Interval Slider, Forces Consecutive) ---
-        async function extractFramesFromVideo(video, objectURL) {
-            console.log("extractFramesFromVideo: Entered (Forcing CONSECUTIVE frame extraction)");
-            if (!video) throw new Error("Video element not provided for extraction.");
-            // No need to check intervalSlider here as it's ignored
-
-            video.preload = 'auto';
-            const tempCanvas = document.createElement('canvas');
-            const tempCtx = tempCanvas.getContext('2d');
-            progressContainer.style.display = 'block';
-            progressBar.style.width = '0%';
+        // --- Process Video Metadata (NOW updates interval max) ---
+        async function processVideoFile(file) {
+            console.log("processVideoFile: Entered");
+            const video = document.createElement('video');
+            activeVideoElement = video; // Assign globally FIRST
+            const objectURL = URL.createObjectURL(file);
+            video.muted = true;
+            video.preload = 'metadata';
+            imageStack = new ImageStack();
+            thumbnailStrip.innerHTML = '';
 
             return new Promise(async (resolve, reject) => {
-                let extractionError = null;
+                video.onerror = (e) => { /* ... as before ... */ console.error("processVideoFile: video.onerror triggered"); if (objectURL) URL.revokeObjectURL(objectURL); progressContainer.style.display = 'none'; activeVideoElement = null; reject(new Error(`Failed to load video metadata: ${e?.target?.error?.message || e?.message || 'Unknown error'}`)); };
+                video.onloadedmetadata = async () => {
+                    console.log("processVideoFile: video.onloadedmetadata triggered");
+                    videoDuration = video.duration; // Assign global duration
+                    totalVideoFramesEstimate = Math.floor(videoDuration * FRAME_RATE_ESTIMATE);
+                    console.log(`Video metadata: ${video.videoWidth}x${video.videoHeight}, Duration: ${videoDuration.toFixed(2)}s (Est. ${totalVideoFramesEstimate} frames)`);
 
-                const startExtractionLogic = async () => {
-                    console.log("extractFramesFromVideo: startExtractionLogic called (video readyState:", video.readyState, ")");
-                    try {
-                        // Check/update video metadata (unchanged)
-                        if (Math.abs(video.duration - videoDuration) > 0.1) {
-                            console.warn(`Duration mismatch during extraction: ${video.duration} vs ${videoDuration}. Using ${video.duration}.`);
-                            videoDuration = video.duration;
-                            totalVideoFramesEstimate = Math.floor(videoDuration * FRAME_RATE_ESTIMATE);
-                            if (totalFramesInfoSpan) { totalFramesInfoSpan.textContent = `(Total: ~${totalVideoFramesEstimate} frames / ${formatTime(videoDuration)})`; }
-                        }
-                        if (!videoDuration || videoDuration === Infinity || !video.videoWidth || !video.videoHeight) {
-                            throw new Error('Video metadata became invalid during extraction wait.');
-                        }
-
-                        const scaled = fitToScreen(video.videoWidth, video.videoHeight);
-                        tempCanvas.width = scaled.width; tempCanvas.height = scaled.height;
-
-                        // --- Get Start Slider Value ONLY ---
-                        const startSliderValue = parseInt(frameSelectSlider.value, 10);
-                        // --- FORCE Frame Jump to 1 (consecutive) ---
-                        const frameJump = 1;
-                        // const currentInterval = parseInt(intervalSlider.value, 10); // Value read but not used
-                        // console.log(`extractFramesFromVideo: Start: ${startSliderValue}%, Interval Slider: ${currentInterval} (IGNORED), Using Frame Jump: ${frameJump}`);
-                        console.log(`extractFramesFromVideo: Start: ${startSliderValue}%, Forcing Frame Jump: ${frameJump} (consecutive)`);
-
-
-                        const startTimePercent = startSliderValue / 100.0;
-                        let startTime = videoDuration * startTimePercent;
-                        startTime = Math.max(0, Math.min(startTime, videoDuration - 0.1));
-
-                        const singleFrameTimeIncrement = 1.0 / FRAME_RATE_ESTIMATE;
-                        // Calculate the time increment based on the FORCED frameJump of 1
-                        const sampledTimeIncrement = frameJump * singleFrameTimeIncrement; // Will always be singleFrameTimeIncrement
-
-                        let framesExtracted = 0;
-                        const intervalText = "consecutive frames"; // Hardcoded text
-                        status.textContent = `Extracting up to ${NUM_FRAMES_TO_PROCESS} ${intervalText}...`;
-                        console.log(`extractFramesFromVideo: Starting CONSECUTIVE frame loop. Target: ${NUM_FRAMES_TO_PROCESS}, Start: ${startTime.toFixed(3)}s`);
-
-
-                        // Loop up to NUM_FRAMES_TO_PROCESS times
-                        for (let i = 0; i < NUM_FRAMES_TO_PROCESS; i++) {
-                            // Calculate target time for consecutive frames
-                            const targetTime = startTime + i * sampledTimeIncrement;
-
-                            // Check against video duration (unchanged)
-                            if (targetTime >= videoDuration - (singleFrameTimeIncrement / 2)) {
-                                console.log(`extractFramesFromVideo: Target time ${targetTime.toFixed(3)}s >= video duration ${videoDuration.toFixed(3)}s. Stopping extraction loop at frame ${i}.`);
-                                break;
-                            }
-
-                            try {
-                                await seekPromise(video, targetTime);
-                                await new Promise(requestAnimationFrame);
-                                tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
-                                const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
-                                imageStack.addImageData(imageData);
-                                framesExtracted++;
-
-                                const progress = ((i + 1) / NUM_FRAMES_TO_PROCESS) * 100;
-                                progressBar.style.width = `${progress}%`;
-
-                                if (i % 5 === 0 || i === NUM_FRAMES_TO_PROCESS - 1) {
-                                     status.textContent = `Extracted frame ${framesExtracted} / ${NUM_FRAMES_TO_PROCESS} target (${intervalText} from ${startSliderValue}%)...`;
-                                }
-
-                                if (i % 10 === 0) { await new Promise(resolveYield => setTimeout(resolveYield, 0)); }
-
-                            } catch (seekDrawError) {
-                                console.error(`Error seeking/drawing frame ${i + 1} (target time ${targetTime.toFixed(3)}s):`, seekDrawError);
-                                status.textContent = `Error extracting frame ${i + 1}, skipping...`;
-                                await new Promise(resolvePause => setTimeout(resolvePause, 50));
-                            }
-                        } // End of frame loop
-
-                        console.log(`extractFramesFromVideo: Frame loop finished. Extracted: ${framesExtracted} frames.`);
-
-                        if (imageStack.images.length > 0) {
-                             if (imageStack.images.length < 2) {
-                                console.warn(`extractFramesFromVideo: Only ${imageStack.images.length} frame(s) extracted. Motion detection requires at least 2.`);
-                                status.textContent = `Extraction complete, but only ${imageStack.images.length} frame(s). Need at least 2 for detection.`;
-                            } else {
-                                status.textContent = `${imageStack.images.length} consecutive frames extracted successfully. Ready for detection.`;
-                            }
-                            resolve();
-                        } else {
-                            throw new Error(`Frame extraction loop completed, but failed to store any frames (Video duration: ${videoDuration.toFixed(2)}s, Start time: ${startTime.toFixed(2)}s).`);
-                        }
-
-                    } catch (loopError) {
-                        console.error("extractFramesFromVideo: Error during extraction logic:", loopError);
-                        extractionError = loopError;
-                        reject(extractionError);
-                    } finally {
-                        console.log("extractFramesFromVideo: Reached finally block.");
-                        progressContainer.style.display = 'none';
+                    // Validate metadata
+                    if (!videoDuration || videoDuration <= 0 || !isFinite(videoDuration) || !video.videoWidth || !video.videoHeight) {
+                        if(totalFramesInfoSpan) totalFramesInfoSpan.textContent = `(Total: Invalid Meta)`;
+                        if (objectURL) URL.revokeObjectURL(objectURL);
+                        activeVideoElement = null;
+                         // --- Reset interval slider on bad metadata ---
+                         if(intervalSlider) {
+                             intervalSlider.max = DEFAULT_INTERVAL_MAX;
+                             intervalSlider.disabled = true;
+                             if(intervalSliderMaxLabel) intervalSliderMaxLabel.textContent = `(Max: ${DEFAULT_INTERVAL_MAX})`;
+                         }
+                        return reject(new Error('Video metadata invalid or duration is zero.'));
                     }
-                }; // End of startExtractionLogic
 
-                // Video Readiness Check (Unchanged)
-                if (video.readyState >= 3) {
-                    console.log("extractFramesFromVideo: Video already ready (readyState >= 3). Starting extraction."); await startExtractionLogic();
-                } else {
-                    console.log("extractFramesFromVideo: Video not ready yet. Adding 'canplay' listener.");
-                    const canPlayListener = async () => { console.log("extractFramesFromVideo: 'canplay' event triggered."); video.removeEventListener('canplay', canPlayListener); await startExtractionLogic(); };
-                    video.addEventListener('canplay', canPlayListener, { once: true });
-                    setTimeout(() => { if (video.readyState < 3) { console.error("extractFramesFromVideo: Timeout waiting for 'canplay' event."); video.removeEventListener('canplay', canPlayListener); reject(new Error("Timeout waiting for video to be ready for frame extraction.")); } }, 15000);
-                }
-            }); // End of Promise
+                    // Update UI elements
+                    if (totalFramesInfoSpan) totalFramesInfoSpan.textContent = `(Total: ~${totalVideoFramesEstimate} frames / ${formatTime(videoDuration)})`;
+                    if (frameSelectSliderContainer) frameSelectSliderContainer.style.display = 'flex';
+                    if (frameSelectSlider) frameSelectSlider.disabled = false;
+
+                    // --- Update the Interval Slider Max based on loaded duration ---
+                    updateIntervalSliderMax(); // Initial calculation based on start=0%
+
+                    // Setup canvas and draw initial frame (as before)
+                    const scaled = fitToScreen(video.videoWidth, video.videoHeight);
+                    canvas.width = scaled.width; canvas.height = scaled.height;
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    status.textContent = `Video loaded. Seeking to initial frame...`;
+                    let initialDisplayTime = (INITIAL_DISPLAY_FRAME -1) / FRAME_RATE_ESTIMATE;
+                    initialDisplayTime = Math.max(0, Math.min(initialDisplayTime, videoDuration - 0.1));
+
+                    // Display initial slider value/time
+                    const currentSliderValue = parseInt(frameSelectSlider.value, 10);
+                    const sliderTime = videoDuration * (currentSliderValue / 100.0);
+                    if(frameSelectValueDisplay) frameSelectValueDisplay.textContent = `${currentSliderValue}%`;
+                    if(frameSelectTimestampDisplay) frameSelectTimestampDisplay.textContent = `(${formatTime(sliderTime)})`;
+
+                    try {
+                        if (video.readyState < 2) { /* ... wait for loadeddata ... */ console.log("processVideoFile: Video readyState < 2, adding 'loadeddata' listener."); await new Promise((resolveReady, rejectReady) => { const onLoadedData = () => { video.removeEventListener('loadeddata', onLoadedData); video.removeEventListener('error', onError); console.log("processVideoFile: 'loadeddata' triggered for initial draw."); resolveReady(); }; const onError = (err) => { video.removeEventListener('loadeddata', onLoadedData); video.removeEventListener('error', onError); console.error("Error waiting for 'loadeddata' for initial draw:", err); rejectReady(err || new Error("Video error before initial draw")); }; video.addEventListener('loadeddata', onLoadedData, { once: true }); video.addEventListener('error', onError, { once: true }); video.preload = 'auto'; }); console.log("processVideoFile: Video readyState now:", video.readyState); }
+                        console.log(`processVideoFile: Seeking to initialDisplayTime: ${initialDisplayTime.toFixed(3)}s (Frame ~${INITIAL_DISPLAY_FRAME})`);
+                        await seekPromise(video, initialDisplayTime);
+                        await new Promise(requestAnimationFrame);
+                        console.log(`processVideoFile: Drawing frame at currentTime: ${video.currentTime.toFixed(3)}`);
+                        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                        console.log(`processVideoFile: Initial frame (~${INITIAL_DISPLAY_FRAME}) drawn to canvas.`);
+                        status.textContent = `Video loaded (${formatTime(videoDuration)}). Ready for motion detection.`;
+                        detectButton.disabled = false;
+                        resolve(); // Success
+                    } catch (error) {
+                        console.error(`processVideoFile: Error seeking/drawing initial frame (~${INITIAL_DISPLAY_FRAME}):`, error);
+                        status.textContent = `Error loading initial frame: ${error.message}`;
+                        if (objectURL) URL.revokeObjectURL(objectURL);
+                        activeVideoElement = null;
+                        reject(error);
+                    }
+                }; // End onloadedmetadata
+                video.src = objectURL; // Trigger loading
+            }); // End Promise
         }
 
 
-        // --- Detect Motion Function (Unchanged - Still forces re-extraction) ---
-        async function detectMotion() {
-            console.log("detectMotion: Entered - Forcing fresh extraction.");
-            if (!currentVideoFile) { status.textContent = "No video loaded."; return; }
+        // --- Frame Extraction (Unchanged - still stops if video ends) ---
+        async function extractFramesFromVideo(video, objectURL) {
+            console.log("extractFramesFromVideo: Entered (Using Interval Slider for spacing)");
+            if (!video) throw new Error("Video element not provided for extraction.");
+            video.preload = 'auto';
+            const tempCanvas = document.createElement('canvas'); const tempCtx = tempCanvas.getContext('2d');
+            progressContainer.style.display = 'block'; progressBar.style.width = '0%';
 
-            // Ensure active video element (unchanged)
-            if (!activeVideoElement) {
-                console.warn("detectMotion: No active video element found. Reprocessing file."); status.textContent = "Video element lost. Reloading..."; detectButton.disabled = true;
-                try { await processVideoFile(currentVideoFile); if (detectButton.disabled) { status.textContent = "Failed to reload video."; return; }
-                } catch (err) { status.textContent = `Error reloading video: ${err.message}`; detectButton.disabled = false; return; }
-                if (!activeVideoElement) { status.textContent = "Failed to get active video element after reload."; detectButton.disabled = false; return; }
-            }
+            return new Promise(async (resolve, reject) => {
+                let extractionError = null;
+                const startExtractionLogic = async () => {
+                    console.log("extractFramesFromVideo: startExtractionLogic called (video readyState:", video.readyState, ")");
+                    try {
+                        if (Math.abs(video.duration - videoDuration) > 0.1 || !videoDuration || videoDuration <= 0 || !isFinite(videoDuration) || !video.videoWidth || !video.videoHeight) {
+                             console.warn(`Re-checking metadata during extraction. Old Duration: ${videoDuration}, New: ${video.duration}`); videoDuration = video.duration; totalVideoFramesEstimate = Math.floor(videoDuration * FRAME_RATE_ESTIMATE); if (totalFramesInfoSpan) { totalFramesInfoSpan.textContent = `(Total: ~${totalVideoFramesEstimate} frames / ${formatTime(videoDuration)})`; } if (!videoDuration || videoDuration <= 0 || !isFinite(videoDuration) || !video.videoWidth || !video.videoHeight) { throw new Error('Video metadata invalid during extraction.'); }
+                             // --- Re-update slider max if duration changed significantly ---
+                             updateIntervalSliderMax();
+                        }
+                        const scaled = fitToScreen(video.videoWidth, video.videoHeight); tempCanvas.width = scaled.width; tempCanvas.height = scaled.height;
+                        const startSliderValue = parseInt(frameSelectSlider.value, 10); const currentInterval = parseInt(intervalSlider.value, 10); const frameJump = currentInterval + 1;
+                        console.log(`extractFramesFromVideo: Start: ${startSliderValue}%, Interval: ${currentInterval} frames apart (Frame Jump: ${frameJump})`);
+                        const startTimePercent = startSliderValue / 100.0; let startTime = videoDuration * startTimePercent; startTime = Math.max(0, Math.min(startTime, videoDuration - 0.01));
+                        const singleFrameTimeIncrement = 1.0 / FRAME_RATE_ESTIMATE; const sampledTimeIncrement = frameJump * singleFrameTimeIncrement;
+                        let framesExtracted = 0; const intervalText = currentInterval === 0 ? "consecutive frames" : `${currentInterval} frames apart`;
+                        status.textContent = `Extracting up to ${NUM_FRAMES_TO_PROCESS} samples (${intervalText})...`;
+                        console.log(`extractFramesFromVideo: Starting frame loop. Target Samples: ${NUM_FRAMES_TO_PROCESS}, Start Time: ${startTime.toFixed(3)}s, Time Increment Per Sample: ${sampledTimeIncrement.toFixed(4)}s`);
+
+                        try { /* Extract reference frame */ console.log(`Extracting reference frame at start time: ${startTime.toFixed(3)}s`); await seekPromise(video, startTime); await new Promise(requestAnimationFrame); tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height); const refImageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height); imageStack.addImageData(refImageData); framesExtracted++; console.log("Reference frame extracted."); } catch (refError) { console.error("CRITICAL: Failed to extract reference frame.", refError); throw new Error(`Failed to extract reference frame: ${refError.message}`); }
+
+                        for (let i = 1; i <= NUM_FRAMES_TO_PROCESS; i++) {
+                            const targetTime = startTime + i * sampledTimeIncrement;
+                            if (targetTime >= videoDuration - (singleFrameTimeIncrement / 2)) { console.log(`extractFramesFromVideo: Target time ${targetTime.toFixed(3)}s for sample ${i} >= video duration ${videoDuration.toFixed(3)}s. Stopping extraction loop.`); break; }
+                            try { /* Extract subsequent frame */ await seekPromise(video, targetTime); await new Promise(requestAnimationFrame); tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height); const imageData = tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height); imageStack.addImageData(imageData); framesExtracted++; const progress = (i / NUM_FRAMES_TO_PROCESS) * 100; progressBar.style.width = `${progress}%`; if (i % 5 === 0 || i === NUM_FRAMES_TO_PROCESS) { status.textContent = `Extracted subsequent sample ${i} / ${NUM_FRAMES_TO_PROCESS} target (${intervalText})...`; } if (i % 10 === 0) { await new Promise(resolveYield => setTimeout(resolveYield, 0)); } } catch (seekDrawError) { console.error(`Error seeking/drawing subsequent frame sample ${i} (target time ${targetTime.toFixed(3)}s):`, seekDrawError); status.textContent = `Error extracting subsequent sample ${i}, skipping...`; await new Promise(resolvePause => setTimeout(resolvePause, 50)); }
+                        }
+                        console.log(`extractFramesFromVideo: Frame loop finished. Total Extracted (incl. reference): ${framesExtracted} frames.`);
+                        if (imageStack.images.length >= 2) { status.textContent = `${imageStack.images.length} total frames (incl. reference) extracted successfully. Ready for detection.`; resolve(); } else { console.error(`Extraction failed: Only ${imageStack.images.length} frame(s) obtained. Need at least 2.`); status.textContent = `Extraction failed: Only ${imageStack.images.length} frame(s) obtained. Need reference + 1 subsequent frame.`; throw new Error(`Extraction failed: Only ${imageStack.images.length} frame(s) obtained.`); }
+                    } catch (loopError) { console.error("extractFramesFromVideo: Error during extraction logic:", loopError); extractionError = loopError; reject(extractionError); } finally { console.log("extractFramesFromVideo: Reached finally block."); progressContainer.style.display = 'none'; }
+                };
+
+                if (video.readyState >= video.HAVE_METADATA) { if (video.readyState >= 3) { console.log("extractFramesFromVideo: Video readyState >= 3. Starting extraction directly."); await startExtractionLogic(); } else { console.log("extractFramesFromVideo: Video readyState < 3. Adding 'canplay' listener..."); const canPlayListener = async () => { console.log("extractFramesFromVideo: 'canplay' event triggered."); video.removeEventListener('canplay', canPlayListener); video.removeEventListener('error', canPlayErrorListener); await startExtractionLogic(); }; const canPlayErrorListener = (err) => { console.error("extractFramesFromVideo: 'error' event triggered while waiting for 'canplay'.", err); video.removeEventListener('canplay', canPlayListener); video.removeEventListener('error', canPlayErrorListener); reject(err || new Error("Video error while waiting for 'canplay'")); }; video.addEventListener('canplay', canPlayListener, { once: true }); video.addEventListener('error', canPlayErrorListener, { once: true }); setTimeout(() => { if (video.readyState < 3) { video.removeEventListener('canplay', canPlayListener); video.removeEventListener('error', canPlayErrorListener); console.error("extractFramesFromVideo: Timeout waiting for 'canplay' event."); reject(new Error("Timeout waiting for video to be ready for frame extraction.")); } }, 15000); } } else { console.error("extractFramesFromVideo: Video metadata not ready."); reject(new Error("Video metadata not ready.")); }
+            });
+        }
+
+
+        // --- Detect Motion Function (Unchanged status logic from previous) ---
+        async function detectMotion() {
+            console.log("detectMotion: Entered - Forcing fresh extraction using current slider settings.");
+            if (!currentVideoFile) { status.textContent = "No video loaded."; return; }
+             if (!activeVideoElement || activeVideoElement.readyState === 0 || !activeVideoElement.duration || activeVideoElement.duration <= 0) { console.warn("detectMotion: No active/valid video element found. Reprocessing file."); status.textContent = "Video element lost or invalid. Reloading..."; detectButton.disabled = true; try { const currentInput = document.getElementById('imageInput'); resetApplication(); if (currentVideoFile && currentInput) { console.log("Attempting to reload from stored file object..."); await processVideoFile(currentVideoFile); if (!activeVideoElement || detectButton.disabled) { status.textContent = "Failed to reload video."; return; } console.log("Video reloaded successfully."); } else { status.textContent = "Cannot reload video: File reference lost."; return; } } catch (err) { status.textContent = `Error reloading video: ${err.message}`; detectButton.disabled = false; resetApplication(); return; } }
 
             const currentStartSliderValue = parseInt(frameSelectSlider.value, 10);
-            // Update status to reflect consecutive extraction
-            status.textContent = `Starting fresh CONSECUTIVE frame extraction from ${currentStartSliderValue}%...`;
-            console.log(`detectMotion: Forcing CONSECUTIVE frame extraction. Start: ${currentStartSliderValue}%`);
+            const currentIntervalValue = parseInt(intervalSlider.value, 10);
+            const intervalDesc = currentIntervalValue === 0 ? "consecutive frames" : `${currentIntervalValue} frames apart`;
+            status.textContent = `Starting fresh frame extraction (Targeting ${NUM_FRAMES_TO_PROCESS} subsequent samples, ${intervalDesc}) from ${currentStartSliderValue}%...`;
+            console.log(`detectMotion: Starting frame extraction. Start: ${currentStartSliderValue}%, Interval: ${currentIntervalValue}`);
             detectButton.disabled = true;
-
-            // --- ALWAYS Reset and Extract (Unchanged) ---
-            imageStack = new ImageStack(); thumbnailStrip.innerHTML = ''; finalBaseImage = null; finalChangeMap = null;
-
+            imageStack = new ImageStack(); finalBaseImage = null; finalChangeMap = null;
             const objectURL = activeVideoElement.src;
             if (!objectURL) { status.textContent = "Error: Cannot get video source for extraction."; detectButton.disabled = false; return; }
 
             try {
-                // Call extraction - it will now *always* extract consecutive frames
                 await extractFramesFromVideo(activeVideoElement, objectURL);
-                console.log("detectMotion: Frame extraction complete.");
+                console.log(`detectMotion: Frame extraction completed. ACTUALLY extracted ${imageStack.images.length} total frames (including reference).`);
 
-                // Check if enough frames were extracted (Unchanged)
-                if (imageStack.images.length < 2) { /* Status already set */ }
+                if (imageStack.images.length < 2) { status.textContent = `Detection cannot proceed: Only ${imageStack.images.length} total frame(s) were extracted (Need Ref + 1). Video might be too short for the selected start/interval.`; console.warn(status.textContent); }
                 else {
-                    // Proceed to detection (Unchanged)
-                    status.textContent = "Frames extracted. Starting detection...";
-                    console.log('Detecting motion using', imageStack.images.length, 'extracted frames');
+                    const actualComparedCount = imageStack.images.length - 1;
+                    status.textContent = `Starting detection (comparing ${actualComparedCount} extracted subsequent frames against first frame)...`;
+                    console.log(`Detecting motion using ${actualComparedCount} subsequent frames compared to reference.`);
                     progressContainer.style.display = 'block'; progressBar.style.width = '0%';
                     const currentThresholdPercent = parseInt(thresholdSlider.value, 10);
 
@@ -345,27 +442,21 @@
 
                     if (finalBaseImage && finalChangeMap) {
                         displayResultImage();
-                        // The status message here will now reflect the higher number of frames compared
-                        status.textContent = `Motion detection complete (${imageStack.images.length} frames compared, threshold ${currentThresholdPercent}%). Red overlay shows changed pixels.`;
-                    } else {
-                        status.textContent = "Motion detection finished, but result data missing."; console.error("Missing finalBaseImage or finalChangeMap after detection."); finalBaseImage = null; finalChangeMap = null;
-                    }
+                        const targetComparedCount = NUM_FRAMES_TO_PROCESS;
+                        let finalStatus = "";
+                        if (actualComparedCount < targetComparedCount) { finalStatus = `Detection complete: Compared all ${actualComparedCount} successfully extracted subsequent frames against first frame (Targeted ${targetComparedCount} samples at ${intervalDesc}, threshold ${currentThresholdPercent}%). Video ended before target samples extracted. Red marks changes.`; } else { finalStatus = `Detection complete: Compared ${actualComparedCount} subsequent frames against first frame (Target of ${targetComparedCount} samples reached at ${intervalDesc}, threshold ${currentThresholdPercent}%). Red marks changes.`; }
+                        status.textContent = finalStatus; console.log(finalStatus);
+                    } else { status.textContent = "Motion detection finished, but result data missing."; console.error("Missing finalBaseImage or finalChangeMap after detection."); finalBaseImage = null; finalChangeMap = null; }
                     console.log('Motion detection complete.');
                 }
-
-            } catch (error) {
-                status.textContent = `Error during processing: ${error.message}`; console.error('Error during detectMotion:', error); finalBaseImage = null; finalChangeMap = null;
-            } finally {
-                detectButton.disabled = false; console.log(`detectMotion: Finally block. Button enabled.`);
-                setTimeout(() => { progressContainer.style.display = 'none'; progressBar.style.width = '0%'; }, 500);
-            }
+            } catch (error) { status.textContent = `Error during processing: ${error.message}`; console.error('Error during detectMotion:', error); finalBaseImage = null; finalChangeMap = null; if (error.message.includes("Extraction failed")) { status.textContent += " Check video file and start time selection."; } } finally { detectButton.disabled = false; console.log(`detectMotion: Finally block. Button enabled.`); setTimeout(() => { progressContainer.style.display = 'none'; progressBar.style.width = '0%'; }, 500); }
         }
 
 
-        // --- Display Result Image (Unchanged - Temp Canvas Method) ---
-        function displayResultImage() { /* ... (unchanged) ... */ if (!finalBaseImage || !finalChangeMap) { status.textContent = 'No result image to display'; console.log('No base image or change map data'); if (ctx) { ctx.clearRect(0, 0, canvas.width, canvas.height); } canvas.removeAttribute('width'); canvas.removeAttribute('height'); return; } canvas.width = finalBaseImage.width; canvas.height = finalBaseImage.height; ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.globalAlpha = 1.0; ctx.putImageData(finalBaseImage, 0, 0); const tempCanvas = document.createElement('canvas'); tempCanvas.width = finalChangeMap.width; tempCanvas.height = finalChangeMap.height; const tempCtx = tempCanvas.getContext('2d'); tempCtx.putImageData(finalChangeMap, 0, 0); ctx.globalAlpha = OVERLAY_ALPHA; ctx.drawImage(tempCanvas, 0, 0); ctx.globalAlpha = 1.0; console.log(`Result image rendered (Reference Frame + ${OVERLAY_ALPHA * 100}% Alpha Change Overlay via temp canvas)`); }
+        // --- Display Result Image (Unchanged) ---
+        function displayResultImage() { if (!finalBaseImage || !finalChangeMap) { status.textContent = 'No result image to display'; console.log('No base image or change map data'); if (ctx) { ctx.clearRect(0, 0, canvas.width, canvas.height); } canvas.removeAttribute('width'); canvas.removeAttribute('height'); return; } canvas.width = finalBaseImage.width; canvas.height = finalBaseImage.height; ctx.clearRect(0, 0, canvas.width, canvas.height); ctx.globalAlpha = 1.0; ctx.putImageData(finalBaseImage, 0, 0); const tempCanvas = document.createElement('canvas'); tempCanvas.width = finalChangeMap.width; tempCanvas.height = finalChangeMap.height; const tempCtx = tempCanvas.getContext('2d'); tempCtx.putImageData(finalChangeMap, 0, 0); ctx.globalAlpha = OVERLAY_ALPHA; ctx.drawImage(tempCanvas, 0, 0); ctx.globalAlpha = 1.0; console.log(`Result image rendered (Reference Frame + ${OVERLAY_ALPHA * 100}% Alpha Change Overlay via temp canvas)`); }
 
-        // --- Reset Application State (Unchanged - Interval slider still resets) ---
+        // --- Reset Application State (Resets interval slider max) ---
         function resetApplication() {
             console.log('Application reset');
             imageStack = new ImageStack(); finalBaseImage = null; finalChangeMap = null;
@@ -381,19 +472,27 @@
             if (frameSelectTimestampDisplay) frameSelectTimestampDisplay.textContent = '(--:--)';
             if (totalFramesInfoSpan) totalFramesInfoSpan.textContent = '(Total: N/A)';
 
-            // Reset Threshold Slider
-            thresholdSlider.value = 15; thresholdValueDisplay.textContent = '15';
-            // Reset Interval Slider
-            if (intervalSlider) intervalSlider.value = 0; if (intervalValueDisplay) intervalValueDisplay.textContent = '0';
+            // Reset sliders to defaults
+            if (thresholdSlider) thresholdSlider.value = 15;
+            if (thresholdValueDisplay) thresholdValueDisplay.textContent = '15';
+            if (intervalSlider) {
+                 intervalSlider.value = 0;
+                 // Reset max to default and disable until video loads
+                 intervalSlider.max = DEFAULT_INTERVAL_MAX;
+                 intervalSlider.disabled = true;
+            }
+            if (intervalValueDisplay) intervalValueDisplay.textContent = '0';
+            if (intervalSliderMaxLabel) intervalSliderMaxLabel.textContent = `(Max: ${DEFAULT_INTERVAL_MAX})`; // Reset max label
 
             videoDuration = 0; totalVideoFramesEstimate = 0; currentVideoFile = null;
 
-            if (activeVideoElement) { console.log("Reset: Cleaning up active video element."); activeVideoElement.pause(); activeVideoElement.removeAttribute('src'); activeVideoElement.load(); activeVideoElement = null; }
-            try { document.getElementById('imageInput').value = ''; } catch(e){}
+            // --- Improved Video Element Cleanup ---
+            if (activeVideoElement) { console.log("Reset: Cleaning up active video element."); activeVideoElement.pause(); activeVideoElement.onerror = null; activeVideoElement.onloadedmetadata = null; activeVideoElement.oncanplay = null; const oldSrc = activeVideoElement.src; activeVideoElement.removeAttribute('src'); if (oldSrc && oldSrc.startsWith('blob:') && typeof URL.revokeObjectURL === 'function') { try { URL.revokeObjectURL(oldSrc); console.log("Reset: Revoked Object URL:", oldSrc); } catch(e){ console.warn("Error revoking object URL during reset:", e); } } activeVideoElement.load(); activeVideoElement = null; }
+            try { const fileInput = document.getElementById('imageInput'); if (fileInput) fileInput.value = ''; } catch(e){ console.warn("Could not clear file input during reset.");}
         }
 
-        // --- Save Result Image (Unchanged - Temp Canvas Method) ---
-        function saveImage() { /* ... (unchanged) ... */ if (!finalBaseImage || !finalChangeMap) { status.textContent = 'No result image available to save'; return; } const cleanCanvas = document.createElement('canvas'); cleanCanvas.width = finalBaseImage.width; cleanCanvas.height = finalBaseImage.height; const cleanCtx = cleanCanvas.getContext('2d'); cleanCtx.globalAlpha = 1.0; cleanCtx.putImageData(finalBaseImage, 0, 0); const tempCanvas = document.createElement('canvas'); tempCanvas.width = finalChangeMap.width; tempCanvas.height = finalChangeMap.height; const tempCtx = tempCanvas.getContext('2d'); tempCtx.putImageData(finalChangeMap, 0, 0); cleanCtx.globalAlpha = OVERLAY_ALPHA; cleanCtx.drawImage(tempCanvas, 0, 0); cleanCtx.globalAlpha = 1.0; const link = document.createElement('a'); link.download = 'motion_detection_result.png'; link.href = cleanCanvas.toDataURL('image/png'); document.body.appendChild(link); link.click(); document.body.removeChild(link); status.textContent = 'Result image saved as motion_detection_result.png'; console.log('Result image saved'); }
+        // --- Save Result Image (Unchanged) ---
+        function saveImage() { if (!finalBaseImage || !finalChangeMap) { status.textContent = 'No result image available to save'; return; } const cleanCanvas = document.createElement('canvas'); cleanCanvas.width = finalBaseImage.width; cleanCanvas.height = finalBaseImage.height; const cleanCtx = cleanCanvas.getContext('2d'); cleanCtx.globalAlpha = 1.0; cleanCtx.putImageData(finalBaseImage, 0, 0); const tempCanvas = document.createElement('canvas'); tempCanvas.width = finalChangeMap.width; tempCanvas.height = finalChangeMap.height; const tempCtx = tempCanvas.getContext('2d'); tempCtx.putImageData(finalChangeMap, 0, 0); cleanCtx.globalAlpha = OVERLAY_ALPHA; cleanCtx.drawImage(tempCanvas, 0, 0); cleanCtx.globalAlpha = 1.0; const link = document.createElement('a'); link.download = 'motion_detection_result.png'; link.href = cleanCanvas.toDataURL('image/png'); document.body.appendChild(link); link.click(); document.body.removeChild(link); status.textContent = 'Result image saved as motion_detection_result.png'; console.log('Result image saved'); }
 
     </script>
 </body>
